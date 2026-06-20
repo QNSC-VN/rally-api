@@ -15,6 +15,7 @@ import { HealthController } from './observability/health.controller';
 import { Algorithm } from 'jsonwebtoken';
 import { IdempotencyInterceptor } from './http/idempotency.interceptor';
 import { HttpLoggingInterceptor } from './http/http-logging.interceptor';
+import { ResilienceModule } from './resilience/resilience.module';
 
 @Global()
 @Module({
@@ -45,6 +46,7 @@ import { HttpLoggingInterceptor } from './http/http-logging.interceptor';
     }),
 
     TerminusModule,
+    ResilienceModule,
   ],
   controllers: [HealthController],
   providers: [
@@ -68,6 +70,7 @@ import { HttpLoggingInterceptor } from './http/http-logging.interceptor';
     OutboxService,
     IdempotencyInterceptor,
     HttpLoggingInterceptor,
+    ResilienceModule,
   ],
 })
 export class PlatformModule {}

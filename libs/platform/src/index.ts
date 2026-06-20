@@ -11,3 +11,5 @@ export * from './auth/index';
 export * from './outbox/index';
 export * from './pipes/index';
 export * from './utils/index';
+export * from './observability/index';
+export * from './resilience/index';

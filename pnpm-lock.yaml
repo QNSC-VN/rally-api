@@ -56,6 +56,9 @@ importers:
       '@nestjs/terminus':
         specifier: ^11.0.0
         version: 11.1.1(@grpc/grpc-js@1.14.4)(@grpc/proto-loader@0.8.1)(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@11.1.27(@nestjs/common@11.1.27(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2))(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@opentelemetry/api':
+        specifier: ^1.9.1
+        version: 1.9.1
       '@opentelemetry/auto-instrumentations-node':
         specifier: ^0.77.0
         version: 0.77.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.8.0(@opentelemetry/api@1.9.1))
@@ -71,6 +74,9 @@ importers:
       '@opentelemetry/sdk-node':
         specifier: ^0.219.0
         version: 0.219.0(@opentelemetry/api@1.9.1)
+      cockatiel:
+        specifier: ^4.0.0
+        version: 4.0.0
       drizzle-orm:
         specifier: ^0.41.0
         version: 0.41.0(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(pg@8.21.0)
@@ -3108,6 +3114,10 @@ packages:
   cluster-key-slot@1.1.1:
     resolution: {integrity: sha512-rwHwUfXL40Chm1r08yrhU3qpUvdVlgkKNeyeGPOxnW8/SyVDvgRaed/Uz54AqWNaTCAThlj6QAs3TZcKI0xDEw==}
     engines: {node: '>=0.10.0'}
+
+  cockatiel@4.0.0:
+    resolution: {integrity: sha512-XpUZJnogsd03BGB19T9sv7Xb8SwvD8JddZV2Tlp0LNspopZ6Idv24ZwCl8vAGJ6JwODZ0zLRYVj3NWvmRcUDqA==}
+    engines: {node: '>=22'}
 
   color-convert@2.0.1:
     resolution: {integrity: sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ==}
@@ -8286,6 +8296,8 @@ snapshots:
   clone@1.0.4: {}
 
   cluster-key-slot@1.1.1: {}
+
+  cockatiel@4.0.0: {}
 
   color-convert@2.0.1:
     dependencies:
