@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
+import { ConfigService } from '@nestjs/config';
 import { PlatformModule } from '@platform';
 import { IdentityModule } from '@modules/identity';
 import { TenancyModule } from '@modules/tenancy';
@@ -21,21 +22,33 @@ import { AsyncLocalStorageMiddleware } from '@platform/context/als.middleware';
 @Module({
   imports: [
     // Pino structured logging — autoLogging disabled; HttpLoggingInterceptor handles per-request logs
-    LoggerModule.forRoot({
-      pinoHttp: {
-        level: process.env['LOG_LEVEL'] ?? 'info',
-        autoLogging: false,
-        redact: ['req.headers.authorization', 'req.headers.cookie'],
-        customProps: () => ({ service: 'rally-api' }),
-        serializers: {
-          req(req) {
-            return {
-              method: req.method,
-              url: req.url,
-              correlationId: req.headers['x-correlation-id'],
-            };
+    LoggerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const isDev = configService.get<string>('NODE_ENV') !== 'production';
+        return {
+          pinoHttp: {
+            level: configService.get<string>('LOG_LEVEL') ?? 'info',
+            // pino-pretty for human-readable logs in dev; JSON in prod for log aggregators
+            transport: isDev
+              ? { target: 'pino-pretty', options: { colorize: true, singleLine: false } }
+              : undefined,
+            // Never log credentials in any environment
+            redact: {
+              paths: [
+                'req.headers.authorization',
+                'req.headers.cookie',
+                'res.headers["set-cookie"]',
+                'req.headers["x-api-key"]',
+                'req.headers["x-csrf-token"]',
+              ],
+              censor: '[REDACTED]',
+            },
+            // HttpLoggingInterceptor emits the per-request summary line
+            autoLogging: false,
+            customProps: () => ({ service: 'rally-api' }),
           },
-        },
+        };
       },
     }),
 

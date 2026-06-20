@@ -2,10 +2,9 @@ import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import fastifyCookie from '@fastify/cookie';
+import fastifyCompress from '@fastify/compress';
 import fastifyHelmet from '@fastify/helmet';
 import { AppConfigService } from '@platform/config';
-import { GlobalExceptionFilter } from '@platform/http';
-import { APP_FILTER } from '@nestjs/core';
 
 export async function bootstrapApp(app: NestFastifyApplication): Promise<void> {
   // Pino structured logger
@@ -20,6 +19,9 @@ export async function bootstrapApp(app: NestFastifyApplication): Promise<void> {
     // Relax CSP for Swagger UI in dev
     contentSecurityPolicy: isDev ? false : undefined,
   });
+
+  // Response compression — reduces JSON payload size 60-80% (gzip/deflate/brotli)
+  await app.register(fastifyCompress, { encodings: ['gzip', 'deflate', 'br'] });
 
   await app.register(fastifyCookie, {
     secret: config.get('CSRF_SECRET'),
@@ -53,7 +55,14 @@ export async function bootstrapApp(app: NestFastifyApplication): Promise<void> {
 
     const document = SwaggerModule.createDocument(app, swaggerConfig);
     SwaggerModule.setup('api/docs', app, document, {
-      swaggerOptions: { persistAuthorization: true },
+      swaggerOptions: {
+        persistAuthorization: true,
+        displayRequestDuration: true,
+        filter: true,
+        tryItOutEnabled: true,
+        deepLinking: true,
+        defaultModelsExpandDepth: 1,
+      },
     });
   }
 
