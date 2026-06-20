@@ -27,7 +27,6 @@ if (isEnabled) {
         '@opentelemetry/instrumentation-http': { enabled: true },
         '@opentelemetry/instrumentation-pg': { enabled: true },
         '@opentelemetry/instrumentation-ioredis': { enabled: true },
-        '@opentelemetry/instrumentation-fastify': { enabled: true },
         '@opentelemetry/instrumentation-aws-sdk': { enabled: true },
         // Disable noisy instrumentations
         '@opentelemetry/instrumentation-fs': { enabled: false },

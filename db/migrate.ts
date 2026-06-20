@@ -18,13 +18,17 @@ if (!url) {
 const pool = new Pool({ connectionString: url, max: 1 });
 const db = drizzle(pool);
 
-try {
-  console.log('Running migrations...');
-  await migrate(db, { migrationsFolder: path.join(import.meta.dirname, 'migrations') });
-  console.log('✅  Migrations applied');
-} catch (err) {
-  console.error('❌  Migration failed', err);
-  process.exit(1);
-} finally {
-  await pool.end();
+async function run() {
+  try {
+    console.log('Running migrations...');
+    await migrate(db, { migrationsFolder: path.join(__dirname, 'migrations') });
+    console.log('✅  Migrations applied');
+  } catch (err) {
+    console.error('❌  Migration failed', err);
+    process.exit(1);
+  } finally {
+    await pool.end();
+  }
 }
+
+void run();

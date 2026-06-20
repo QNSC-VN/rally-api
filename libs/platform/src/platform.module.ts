@@ -12,6 +12,7 @@ import { JwtAuthGuard } from './auth/jwt.guard';
 import { PermissionGuard } from './auth/permission.guard';
 import { OutboxService } from './outbox/outbox.service';
 import { HealthController } from './observability/health.controller';
+import { Algorithm } from 'jsonwebtoken';
 
 @Global()
 @Module({
@@ -27,13 +28,14 @@ import { HealthController } from './observability/health.controller';
         privateKey: config.get('JWT_PRIVATE_KEY'),
         publicKey: config.get('JWT_PUBLIC_KEY'),
         signOptions: {
-          algorithm: 'EdDSA',
-          expiresIn: config.get('JWT_ACCESS_EXPIRY'),
+          algorithm: 'EdDSA' as Algorithm,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          expiresIn: config.get('JWT_ACCESS_EXPIRY') as any,
           issuer: config.get('JWT_ISSUER'),
           audience: config.get('JWT_AUDIENCE'),
         },
         verifyOptions: {
-          algorithms: ['EdDSA', 'RS256'],
+          algorithms: ['EdDSA', 'RS256'] as Algorithm[],
           issuer: config.get('JWT_ISSUER'),
           audience: config.get('JWT_AUDIENCE'),
         },

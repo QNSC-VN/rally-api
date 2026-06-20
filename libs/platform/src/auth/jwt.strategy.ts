@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { Algorithm } from 'jsonwebtoken';
 import { AppConfigService } from '../config/app-config.service';
 
 export interface JwtPayload {
@@ -22,7 +23,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: config.get('JWT_PUBLIC_KEY'),
-      algorithms: ['EdDSA', 'RS256'],
+      algorithms: ['EdDSA', 'RS256'] as Algorithm[],
       issuer: config.get('JWT_ISSUER'),
       audience: config.get('JWT_AUDIENCE'),
     });
