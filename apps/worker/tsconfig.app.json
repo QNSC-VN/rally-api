@@ -2,6 +2,7 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "../../dist/apps/worker",
+    "rootDir": "../../",
     "declaration": false
   },
   "include": ["src/**/*"],

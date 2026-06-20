@@ -5,6 +5,10 @@ import { PlatformModule } from '@platform';
 import { AuditModule } from '@modules/audit';
 import { NotificationsModule } from '@modules/notifications';
 import { ReportingModule } from '@modules/reporting';
+import { OutboxRelayService } from './outbox/outbox-relay.service';
+import { AuditConsumer } from './consumers/audit.consumer';
+import { NotificationsConsumer } from './consumers/notifications.consumer';
+import { SnapshotCronService } from './cron/snapshot.cron';
 
 /**
  * Worker process module.
@@ -22,10 +26,19 @@ import { ReportingModule } from '@modules/reporting';
     ScheduleModule.forRoot(),
     PlatformModule,
 
-    // Contexts with SQS consumers
+    // Contexts with SQS consumers / cron jobs
     AuditModule,
     NotificationsModule,
     ReportingModule,
+  ],
+  providers: [
+    // Transactional outbox → SNS relay
+    OutboxRelayService,
+    // SQS long-poll consumers
+    AuditConsumer,
+    NotificationsConsumer,
+    // Scheduled cron jobs
+    SnapshotCronService,
   ],
 })
 export class WorkerModule {}

@@ -1,7 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { JwtPayload } from '@platform';
 import { IReportingRepository, REPORTING_REPOSITORY } from '../domain/ports/reporting.repository';
-import type { SprintBurndownReport, VelocityReport } from '../domain/reporting.types';
+import type {
+  SprintBurndownReport,
+  SprintSnapshot,
+  VelocityReport,
+} from '../domain/reporting.types';
 
 @Injectable()
 export class ReportingService {
@@ -29,5 +33,10 @@ export class ReportingService {
   ): Promise<VelocityReport> {
     const sprints = await this.reportingRepo.getVelocity(actor.tenantId, projectId, lastNSprints);
     return { projectId, sprints };
+  }
+
+  /** Internal use — called by SnapshotCronService to materialise daily burndown data. */
+  async upsertSnapshot(snapshot: Omit<SprintSnapshot, 'id' | 'createdAt'>): Promise<void> {
+    return this.reportingRepo.upsertSnapshot(snapshot);
   }
 }
