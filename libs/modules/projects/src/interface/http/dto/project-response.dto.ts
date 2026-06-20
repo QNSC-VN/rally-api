@@ -1,4 +1,4 @@
-// ── Project response ─────────────────────────────────────────────────────────
+// ── Project response ──────────────────────────────────────────────────────────
 
 export interface ProjectResponseDto {
   id: string;
@@ -12,11 +12,6 @@ export interface ProjectResponseDto {
   settings: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface ProjectListResponseDto {
-  items: ProjectResponseDto[];
-  nextCursor: string | null;
 }
 
 // ── Workflow status response ──────────────────────────────────────────────────

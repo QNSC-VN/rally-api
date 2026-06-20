@@ -1,13 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, isNull, lt } from 'drizzle-orm';
-import { InjectDrizzle } from '@platform';
-import type { DrizzleDB } from '@platform';
+import { InjectDrizzle, buildPageResult } from '@platform';
+import type { DrizzleDB, CursorPayload, PagedResult } from '@platform';
 import { workspaces } from '../../../../../../db/schema/tenancy';
 import type {
   Workspace,
   CreateWorkspaceInput,
   UpdateWorkspaceInput,
-  WorkspacePage,
 } from '../../domain/tenancy.types';
 import { IWorkspaceRepository } from '../../domain/ports/workspace.repository';
 
@@ -35,12 +34,14 @@ export class WorkspaceDrizzleRepository implements IWorkspaceRepository {
     return (rows[0] as Workspace | undefined) ?? null;
   }
 
-  async listByTenant(tenantId: string, limit: number, cursor?: string): Promise<WorkspacePage> {
+  async listByTenant(
+    tenantId: string,
+    { limit, cursor }: { limit: number; cursor: CursorPayload | null },
+  ): Promise<PagedResult<Workspace>> {
     const conditions = [eq(workspaces.tenantId, tenantId), isNull(workspaces.deletedAt)];
 
     if (cursor) {
-      const cursorDate = new Date(Buffer.from(cursor, 'base64url').toString());
-      conditions.push(lt(workspaces.createdAt, cursorDate));
+      conditions.push(lt(workspaces.createdAt, new Date(cursor.k[0] as string)));
     }
 
     const rows = await this.db
@@ -50,14 +51,7 @@ export class WorkspaceDrizzleRepository implements IWorkspaceRepository {
       .orderBy(workspaces.createdAt)
       .limit(limit + 1);
 
-    const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, limit) : rows;
-
-    const nextCursor = hasMore
-      ? Buffer.from(items[items.length - 1]!.createdAt.toISOString()).toString('base64url')
-      : null;
-
-    return { items: items as Workspace[], nextCursor };
+    return buildPageResult(rows as Workspace[], limit, (w) => [w.createdAt.toISOString()]);
   }
 
   async create(input: CreateWorkspaceInput): Promise<Workspace> {

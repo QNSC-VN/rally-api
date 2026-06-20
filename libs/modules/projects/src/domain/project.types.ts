@@ -64,8 +64,3 @@ export interface CreateWorkflowStatusInput {
   position: number;
   isDefault?: boolean;
 }
-
-export interface ProjectPage {
-  items: Project[];
-  nextCursor: string | null;
-}

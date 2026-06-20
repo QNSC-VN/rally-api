@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { createZodDto } from 'nestjs-zod';
 import { ErrorCodes } from '../errors/error-codes';
 import { PreconditionFailedException } from '../errors/exceptions';
 
@@ -97,3 +98,7 @@ export function buildPageArgs(query: PageQuery): {
   const cursor = query.cursor ? decodeCursor(query.cursor) : null;
   return { limit, cursor };
 }
+
+// ── DTO class for NestJS controllers ─────────────────────────────────────────
+
+export class PageQueryDto extends createZodDto(PageQuerySchema) {}

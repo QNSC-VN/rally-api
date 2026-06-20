@@ -11,14 +11,13 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors } from '@platform';
-import type { JwtPayload } from '@platform';
+import { Auth, ApiCommonErrors, buildPageArgs } from '@platform';
+import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { ProjectsService } from '../../application/projects.service';
 import { CreateProjectDto, UpdateProjectDto, ProjectQueryDto } from './dto/project-request.dto';
 import type {
   ProjectResponseDto,
-  ProjectListResponseDto,
   WorkflowStatusResponseDto,
   WorkflowTransitionResponseDto,
 } from './dto/project-response.dto';
@@ -81,17 +80,10 @@ export class ProjectsController {
   async listProjects(
     @CurrentUser() user: JwtPayload,
     @Query() query: ProjectQueryDto,
-  ): Promise<ProjectListResponseDto> {
-    const page = await this.projectsService.listProjects(
-      user,
-      query.workspaceId,
-      query.limit,
-      query.cursor,
-    );
-    return {
-      items: page.items.map(toProjectDto),
-      nextCursor: page.nextCursor,
-    };
+  ): Promise<PagedResult<ProjectResponseDto>> {
+    const args = buildPageArgs(query);
+    const page = await this.projectsService.listProjects(user, query.workspaceId, args);
+    return { data: page.data.map(toProjectDto), pageInfo: page.pageInfo };
   }
 
   // ── Create project ─────────────────────────────────────────────────────────

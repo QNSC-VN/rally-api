@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, lt } from 'drizzle-orm';
-import { InjectDrizzle } from '@platform';
-import type { DrizzleDB } from '@platform';
+import { InjectDrizzle, buildPageResult } from '@platform';
+import type { DrizzleDB, CursorPayload, PagedResult } from '@platform';
 import { workspaceMembers } from '../../../../../../db/schema/tenancy';
-import type { WorkspaceMember, AddMemberInput, MemberPage } from '../../domain/tenancy.types';
+import type { WorkspaceMember, AddMemberInput } from '../../domain/tenancy.types';
 import { IWorkspaceMemberRepository } from '../../domain/ports/workspace-member.repository';
 
 @Injectable()
@@ -21,12 +21,14 @@ export class WorkspaceMemberDrizzleRepository implements IWorkspaceMemberReposit
     return (rows[0] as WorkspaceMember | undefined) ?? null;
   }
 
-  async listMembers(workspaceId: string, limit: number, cursor?: string): Promise<MemberPage> {
+  async listMembers(
+    workspaceId: string,
+    { limit, cursor }: { limit: number; cursor: CursorPayload | null },
+  ): Promise<PagedResult<WorkspaceMember>> {
     const conditions = [eq(workspaceMembers.workspaceId, workspaceId)];
 
     if (cursor) {
-      const cursorDate = new Date(Buffer.from(cursor, 'base64url').toString());
-      conditions.push(lt(workspaceMembers.createdAt, cursorDate));
+      conditions.push(lt(workspaceMembers.createdAt, new Date(cursor.k[0] as string)));
     }
 
     const rows = await this.db
@@ -36,14 +38,7 @@ export class WorkspaceMemberDrizzleRepository implements IWorkspaceMemberReposit
       .orderBy(workspaceMembers.createdAt)
       .limit(limit + 1);
 
-    const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, limit) : rows;
-
-    const nextCursor = hasMore
-      ? Buffer.from(items[items.length - 1]!.createdAt.toISOString()).toString('base64url')
-      : null;
-
-    return { items: items as WorkspaceMember[], nextCursor };
+    return buildPageResult(rows as WorkspaceMember[], limit, (m) => [m.createdAt.toISOString()]);
   }
 
   async addMember(input: AddMemberInput): Promise<WorkspaceMember> {

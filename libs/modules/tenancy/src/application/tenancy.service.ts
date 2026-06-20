@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
   PreconditionFailedException,
 } from '@platform';
-import type { JwtPayload } from '@platform';
+import type { JwtPayload, CursorPayload, PagedResult } from '@platform';
 import { ITenantRepository, TENANT_REPOSITORY } from '../domain/ports/tenant.repository';
 import { IWorkspaceRepository, WORKSPACE_REPOSITORY } from '../domain/ports/workspace.repository';
 import {
@@ -17,13 +17,8 @@ import type {
   Tenant,
   Workspace,
   WorkspaceMember,
-  WorkspacePage,
-  MemberPage,
   UpdateWorkspaceInput,
 } from '../domain/tenancy.types';
-
-const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 100;
 
 @Injectable()
 export class TenancyService {
@@ -52,11 +47,9 @@ export class TenancyService {
 
   async listWorkspaces(
     tenantId: string,
-    limit = DEFAULT_PAGE_SIZE,
-    cursor?: string,
-  ): Promise<WorkspacePage> {
-    const safeLimit = Math.min(limit, MAX_PAGE_SIZE);
-    return this.workspaceRepo.listByTenant(tenantId, safeLimit, cursor);
+    args: { limit: number; cursor: CursorPayload | null },
+  ): Promise<PagedResult<Workspace>> {
+    return this.workspaceRepo.listByTenant(tenantId, args);
   }
 
   async createWorkspace(
@@ -125,12 +118,10 @@ export class TenancyService {
   async listMembers(
     tenantId: string,
     workspaceId: string,
-    limit = DEFAULT_PAGE_SIZE,
-    cursor?: string,
-  ): Promise<MemberPage> {
+    args: { limit: number; cursor: CursorPayload | null },
+  ): Promise<PagedResult<WorkspaceMember>> {
     await this.getWorkspace(tenantId, workspaceId);
-    const safeLimit = Math.min(limit, MAX_PAGE_SIZE);
-    return this.memberRepo.listMembers(workspaceId, safeLimit, cursor);
+    return this.memberRepo.listMembers(workspaceId, args);
   }
 
   async addMember(

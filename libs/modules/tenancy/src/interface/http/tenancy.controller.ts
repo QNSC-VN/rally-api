@@ -11,22 +11,15 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors } from '@platform';
-import type { JwtPayload } from '@platform';
+import { Auth, ApiCommonErrors, buildPageArgs, PageQueryDto } from '@platform';
+import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { TenancyService } from '../../application/tenancy.service';
-import {
-  CreateWorkspaceDto,
-  UpdateWorkspaceDto,
-  AddMemberDto,
-  CursorQueryDto,
-} from './dto/tenancy-request.dto';
+import { CreateWorkspaceDto, UpdateWorkspaceDto, AddMemberDto } from './dto/tenancy-request.dto';
 import type {
   TenantResponseDto,
   WorkspaceResponseDto,
-  WorkspaceListResponseDto,
   MemberResponseDto,
-  MemberListResponseDto,
 } from './dto/tenancy-response.dto';
 import type { Tenant, Workspace, WorkspaceMember } from '../../domain/tenancy.types';
 
@@ -99,13 +92,11 @@ export class WorkspaceController {
   @ApiCommonErrors(401)
   async listWorkspaces(
     @CurrentUser() user: JwtPayload,
-    @Query() query: CursorQueryDto,
-  ): Promise<WorkspaceListResponseDto> {
-    const page = await this.tenancyService.listWorkspaces(user.tenantId, query.limit, query.cursor);
-    return {
-      items: page.items.map(toWorkspaceDto),
-      nextCursor: page.nextCursor,
-    };
+    @Query() query: PageQueryDto,
+  ): Promise<PagedResult<WorkspaceResponseDto>> {
+    const args = buildPageArgs(query);
+    const page = await this.tenancyService.listWorkspaces(user.tenantId, args);
+    return { data: page.data.map(toWorkspaceDto), pageInfo: page.pageInfo };
   }
 
   // ── Create workspace ───────────────────────────────────────────────────────
@@ -179,18 +170,11 @@ export class WorkspaceController {
   async listMembers(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseUUIDPipe) id: string,
-    @Query() query: CursorQueryDto,
-  ): Promise<MemberListResponseDto> {
-    const page = await this.tenancyService.listMembers(
-      user.tenantId,
-      id,
-      query.limit,
-      query.cursor,
-    );
-    return {
-      items: page.items.map(toMemberDto),
-      nextCursor: page.nextCursor,
-    };
+    @Query() query: PageQueryDto,
+  ): Promise<PagedResult<MemberResponseDto>> {
+    const args = buildPageArgs(query);
+    const page = await this.tenancyService.listMembers(user.tenantId, id, args);
+    return { data: page.data.map(toMemberDto), pageInfo: page.pageInfo };
   }
 
   // ── Add member ─────────────────────────────────────────────────────────────

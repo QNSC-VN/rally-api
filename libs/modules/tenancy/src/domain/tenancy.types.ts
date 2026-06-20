@@ -53,13 +53,3 @@ export interface AddMemberInput {
   workspaceId: string;
   userId: string;
 }
-
-export interface WorkspacePage {
-  items: Workspace[];
-  nextCursor: string | null;
-}
-
-export interface MemberPage {
-  items: WorkspaceMember[];
-  nextCursor: string | null;
-}

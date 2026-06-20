@@ -1,9 +1,5 @@
-import type {
-  Project,
-  CreateProjectInput,
-  UpdateProjectInput,
-  ProjectPage,
-} from '../project.types';
+import type { CursorPayload, PagedResult } from '@platform';
+import type { Project, CreateProjectInput, UpdateProjectInput } from '../project.types';
 
 export const PROJECT_REPOSITORY = Symbol('PROJECT_REPOSITORY');
 
@@ -13,9 +9,8 @@ export interface IProjectRepository {
   listByWorkspace(
     workspaceId: string,
     tenantId: string,
-    limit: number,
-    cursor?: string,
-  ): Promise<ProjectPage>;
+    args: { limit: number; cursor: CursorPayload | null },
+  ): Promise<PagedResult<Project>>;
   create(input: CreateProjectInput): Promise<Project>;
   update(id: string, input: UpdateProjectInput): Promise<Project>;
   softDelete(id: string): Promise<void>;

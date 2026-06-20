@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
 import { NotFoundException, ConflictException, PreconditionFailedException } from '@platform';
-import type { JwtPayload } from '@platform';
+import type { JwtPayload, CursorPayload, PagedResult } from '@platform';
 import { IProjectRepository, PROJECT_REPOSITORY } from '../domain/ports/project.repository';
 import {
   IWorkflowStatusRepository,
@@ -12,11 +12,7 @@ import type {
   WorkflowStatus,
   WorkflowTransition,
   UpdateProjectInput,
-  ProjectPage,
 } from '../domain/project.types';
-
-const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 100;
 
 /** Default workflow statuses seeded for every new project (mirrors Rally defaults). */
 const DEFAULT_STATUSES: Array<{
@@ -46,11 +42,9 @@ export class ProjectsService {
   async listProjects(
     actor: JwtPayload,
     workspaceId: string,
-    limit = DEFAULT_PAGE_SIZE,
-    cursor?: string,
-  ): Promise<ProjectPage> {
-    const safeLimit = Math.min(limit, MAX_PAGE_SIZE);
-    return this.projectRepo.listByWorkspace(workspaceId, actor.tenantId, safeLimit, cursor);
+    args: { limit: number; cursor: CursorPayload | null },
+  ): Promise<PagedResult<Project>> {
+    return this.projectRepo.listByWorkspace(workspaceId, actor.tenantId, args);
   }
 
   async createProject(

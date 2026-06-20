@@ -1,14 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, isNull, lt, sql } from 'drizzle-orm';
-import { InjectDrizzle } from '@platform';
-import type { DrizzleDB } from '@platform';
+import { InjectDrizzle, buildPageResult } from '@platform';
+import type { DrizzleDB, CursorPayload, PagedResult } from '@platform';
 import { projects, projectCounters } from '../../../../../../db/schema/work';
-import type {
-  Project,
-  CreateProjectInput,
-  UpdateProjectInput,
-  ProjectPage,
-} from '../../domain/project.types';
+import type { Project, CreateProjectInput, UpdateProjectInput } from '../../domain/project.types';
 import { IProjectRepository } from '../../domain/ports/project.repository';
 
 @Injectable()
@@ -34,9 +29,8 @@ export class ProjectDrizzleRepository implements IProjectRepository {
   async listByWorkspace(
     workspaceId: string,
     tenantId: string,
-    limit: number,
-    cursor?: string,
-  ): Promise<ProjectPage> {
+    { limit, cursor }: { limit: number; cursor: CursorPayload | null },
+  ): Promise<PagedResult<Project>> {
     const conditions = [
       eq(projects.workspaceId, workspaceId),
       eq(projects.tenantId, tenantId),
@@ -44,8 +38,7 @@ export class ProjectDrizzleRepository implements IProjectRepository {
     ];
 
     if (cursor) {
-      const cursorDate = new Date(Buffer.from(cursor, 'base64url').toString());
-      conditions.push(lt(projects.createdAt, cursorDate));
+      conditions.push(lt(projects.createdAt, new Date(cursor.k[0] as string)));
     }
 
     const rows = await this.db
@@ -55,13 +48,7 @@ export class ProjectDrizzleRepository implements IProjectRepository {
       .orderBy(projects.createdAt)
       .limit(limit + 1);
 
-    const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, limit) : rows;
-    const nextCursor = hasMore
-      ? Buffer.from(items[items.length - 1]!.createdAt.toISOString()).toString('base64url')
-      : null;
-
-    return { items: items as Project[], nextCursor };
+    return buildPageResult(rows as Project[], limit, (p) => [p.createdAt.toISOString()]);
   }
 
   async create(input: CreateProjectInput): Promise<Project> {

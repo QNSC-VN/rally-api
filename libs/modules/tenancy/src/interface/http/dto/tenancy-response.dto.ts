@@ -25,13 +25,6 @@ export interface WorkspaceResponseDto {
   updatedAt: string;
 }
 
-// ── Paginated workspace list ─────────────────────────────────────────────────
-
-export interface WorkspaceListResponseDto {
-  items: WorkspaceResponseDto[];
-  nextCursor: string | null;
-}
-
 // ── Member response ──────────────────────────────────────────────────────────
 
 export interface MemberResponseDto {
@@ -39,11 +32,4 @@ export interface MemberResponseDto {
   workspaceId: string;
   userId: string;
   createdAt: string;
-}
-
-// ── Paginated member list ────────────────────────────────────────────────────
-
-export interface MemberListResponseDto {
-  items: MemberResponseDto[];
-  nextCursor: string | null;
 }

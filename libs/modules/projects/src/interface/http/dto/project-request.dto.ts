@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { PageQuerySchema } from '@platform';
 
 // ── Create Project ───────────────────────────────────────────────────────────
 
@@ -31,10 +32,8 @@ export class UpdateProjectDto extends createZodDto(UpdateProjectSchema) {}
 
 // ── Pagination query ─────────────────────────────────────────────────────────
 
-export const ProjectQuerySchema = z.object({
+export const ProjectQuerySchema = PageQuerySchema.extend({
   workspaceId: z.string().uuid(),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  cursor: z.string().optional(),
 });
 
 export class ProjectQueryDto extends createZodDto(ProjectQuerySchema) {}
