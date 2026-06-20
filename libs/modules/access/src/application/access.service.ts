@@ -1,0 +1,104 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { uuidv7 } from 'uuidv7';
+import { NotFoundException, ConflictException } from '@platform';
+import type { JwtPayload } from '@platform';
+import { IRoleRepository, ROLE_REPOSITORY } from '../domain/ports/role.repository';
+import {
+  IRoleAssignmentRepository,
+  ROLE_ASSIGNMENT_REPOSITORY,
+} from '../domain/ports/role-assignment.repository';
+import type {
+  SystemRole,
+  UserRoleAssignment,
+  ScopeType,
+  AssignRoleInput,
+} from '../domain/access.types';
+
+@Injectable()
+export class AccessService {
+  private readonly logger = new Logger(AccessService.name);
+
+  constructor(
+    @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
+    @Inject(ROLE_ASSIGNMENT_REPOSITORY)
+    private readonly assignmentRepo: IRoleAssignmentRepository,
+  ) {}
+
+  // ── Roles ─────────────────────────────────────────────────────────────────
+
+  async listRoles(tenantId: string): Promise<SystemRole[]> {
+    return this.roleRepo.listForTenant(tenantId);
+  }
+
+  // ── Assignments ───────────────────────────────────────────────────────────
+
+  async getUserAssignments(tenantId: string, userId: string): Promise<UserRoleAssignment[]> {
+    return this.assignmentRepo.listForUser(tenantId, userId);
+  }
+
+  async assignRole(
+    actor: JwtPayload,
+    userId: string,
+    roleId: string,
+    scopeType: ScopeType,
+    scopeId?: string,
+  ): Promise<UserRoleAssignment> {
+    // Validate role exists and is accessible for this tenant
+    const role = await this.roleRepo.findById(roleId);
+    if (!role || (role.tenantId !== null && role.tenantId !== actor.tenantId)) {
+      throw new NotFoundException('ROLE_NOT_FOUND', 'Role not found');
+    }
+
+    const existing = await this.assignmentRepo.findExisting(
+      userId,
+      roleId,
+      scopeType,
+      scopeId ?? null,
+    );
+    if (existing) {
+      throw new ConflictException(
+        'ROLE_ASSIGNMENT_NOT_FOUND',
+        'User already has this role in the given scope',
+      );
+    }
+
+    const input: AssignRoleInput = {
+      id: uuidv7(),
+      tenantId: actor.tenantId,
+      userId,
+      roleId,
+      scopeType,
+      scopeId,
+      grantedBy: actor.sub,
+    };
+
+    const assignment = await this.assignmentRepo.create(input);
+    this.logger.log(
+      { assignmentId: assignment.id, userId, roleId, scopeType, scopeId },
+      'Role assigned',
+    );
+    return assignment;
+  }
+
+  async revokeRole(actor: JwtPayload, assignmentId: string): Promise<void> {
+    const assignment = await this.assignmentRepo.findById(assignmentId);
+    if (!assignment || assignment.tenantId !== actor.tenantId) {
+      throw new NotFoundException('ROLE_ASSIGNMENT_NOT_FOUND', 'Role assignment not found');
+    }
+    await this.assignmentRepo.delete(assignmentId);
+    this.logger.log({ assignmentId, revokedBy: actor.sub }, 'Role revoked');
+  }
+
+  /** Check if a user has a specific permission in any scope. Used by guards. */
+  async hasPermission(tenantId: string, userId: string, permission: string): Promise<boolean> {
+    const assignments = await this.assignmentRepo.listForUser(tenantId, userId);
+    if (!assignments.length) return false;
+
+    const roleIds = [...new Set(assignments.map((a) => a.roleId))];
+    for (const roleId of roleIds) {
+      const role = await this.roleRepo.findById(roleId);
+      if (role?.permissions.includes(permission)) return true;
+    }
+    return false;
+  }
+}
