@@ -24,10 +24,18 @@ export default [
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      // TypeScript handles these checks more accurately than ESLint
+      'no-undef': 'off',
+      'no-redeclare': 'off',
       'no-console': 'warn',
     },
   },
   {
     ignores: ['dist/**', 'node_modules/**', 'coverage/**', '**/*.js'],
+  },
+  // db/ scripts are Node scripts that legitimately use console
+  {
+    files: ['db/**/*.ts'],
+    rules: { 'no-console': 'off' },
   },
 ];

@@ -7,7 +7,6 @@
  */
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
-import { eq } from 'drizzle-orm';
 import * as schema from '../schema';
 
 const url = process.env['DATABASE_URL'];
@@ -22,7 +21,7 @@ const db = drizzle(pool, { schema });
 const SYSTEM_TENANT_ID = '00000000-0000-7000-8000-000000000001';
 const ADMIN_USER_ID    = '00000000-0000-7000-8000-000000000002';
 const WORKSPACE_ID     = '00000000-0000-7000-8000-000000000003';
-const PROJECT_ID       = '00000000-0000-7000-8000-000000000004';
+// PROJECT_ID reserved for Phase 0 seeding
 
 async function seed() {
   console.log('Seeding...');

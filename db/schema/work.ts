@@ -11,7 +11,6 @@ import {
   text,
   boolean,
   integer,
-  decimal,
   timestamp,
   date,
   jsonb,

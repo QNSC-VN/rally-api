@@ -43,7 +43,7 @@ export interface ResilienceOptions {
   bulkhead?: BulkheadOptions;
 }
 
-export interface ResolvedResilienceOptions extends Required<ResilienceOptions> {}
+export type ResolvedResilienceOptions = Required<ResilienceOptions>;
 
 export interface PolicyEntry {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

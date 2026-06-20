@@ -7,7 +7,6 @@ import {
   uuid,
   varchar,
   text,
-  boolean,
   integer,
   timestamp,
   jsonb,

@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { HealthCheck, HealthCheckService, TypeOrmHealthIndicator } from '@nestjs/terminus';
+import { HealthCheck, HealthCheckService } from '@nestjs/terminus';
 import { ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/decorators';
 import { InjectDrizzle } from '../database/drizzle.provider';
