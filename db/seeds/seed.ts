@@ -7,6 +7,7 @@
  */
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
+import * as argon2 from 'argon2';
 import * as schema from '../schema';
 
 const url = process.env['DATABASE_URL'];
@@ -19,8 +20,8 @@ const pool = new Pool({ connectionString: url, max: 1 });
 const db = drizzle(pool, { schema });
 
 const SYSTEM_TENANT_ID = '00000000-0000-7000-8000-000000000001';
-const ADMIN_USER_ID    = '00000000-0000-7000-8000-000000000002';
-const WORKSPACE_ID     = '00000000-0000-7000-8000-000000000003';
+const ADMIN_USER_ID = '00000000-0000-7000-8000-000000000002';
+const WORKSPACE_ID = '00000000-0000-7000-8000-000000000003';
 // PROJECT_ID reserved for Phase 0 seeding
 
 async function seed() {
@@ -50,6 +51,7 @@ async function seed() {
     .onConflictDoNothing();
 
   // ── Admin user ───────────────────────────────────────────────────────────
+  const passwordHash = await argon2.hash('Admin@Rally2026!', { type: argon2.argon2id });
   await db
     .insert(schema.users)
     .values({
@@ -60,6 +62,7 @@ async function seed() {
       emailVerified: true,
       locale: 'en',
       timezone: 'Asia/Ho_Chi_Minh',
+      passwordHash,
     })
     .onConflictDoNothing();
 
@@ -75,12 +78,20 @@ async function seed() {
 
   // ── System roles ─────────────────────────────────────────────────────────
   const ROLES = [
-    { slug: 'workspace_admin',   name: 'Workspace Admin',   permissions: ['workspace:*'] },
-    { slug: 'project_admin',     name: 'Project Admin',     permissions: ['project:*'] },
-    { slug: 'project_member',    name: 'Project Member',    permissions: ['work_item:create', 'work_item:edit:own', 'work_item:view'] },
-    { slug: 'project_viewer',    name: 'Project Viewer',    permissions: ['work_item:view'] },
-    { slug: 'workspace_member',  name: 'Workspace Member',  permissions: ['workspace:view', 'project:view'] },
-    { slug: 'guest',             name: 'Guest',             permissions: ['work_item:view:public'] },
+    { slug: 'workspace_admin', name: 'Workspace Admin', permissions: ['workspace:*'] },
+    { slug: 'project_admin', name: 'Project Admin', permissions: ['project:*'] },
+    {
+      slug: 'project_member',
+      name: 'Project Member',
+      permissions: ['work_item:create', 'work_item:edit:own', 'work_item:view'],
+    },
+    { slug: 'project_viewer', name: 'Project Viewer', permissions: ['work_item:view'] },
+    {
+      slug: 'workspace_member',
+      name: 'Workspace Member',
+      permissions: ['workspace:view', 'project:view'],
+    },
+    { slug: 'guest', name: 'Guest', permissions: ['work_item:view:public'] },
   ];
 
   for (const role of ROLES) {
@@ -109,5 +120,8 @@ async function seed() {
 }
 
 seed()
-  .catch((e) => { console.error(e); process.exit(1); })
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
   .finally(() => pool.end());

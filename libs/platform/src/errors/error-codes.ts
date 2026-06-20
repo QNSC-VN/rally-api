@@ -55,6 +55,10 @@ export const ErrorCodes = {
   PERMISSION_DENIED: 'PERMISSION_DENIED',
   ROLE_NOT_FOUND: 'ROLE_NOT_FOUND',
   ROLE_ASSIGNMENT_NOT_FOUND: 'ROLE_ASSIGNMENT_NOT_FOUND',
+
+  // User
+  USER_NOT_FOUND: 'USER_NOT_FOUND',
+  USER_DEACTIVATED: 'USER_DEACTIVATED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
