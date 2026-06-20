@@ -13,15 +13,18 @@ import { NotificationsModule } from '@modules/notifications';
 import { AuditModule } from '@modules/audit';
 import { ReportingModule } from '@modules/reporting';
 import { GlobalExceptionFilter } from '@platform/http/global-exception.filter';
+import { HttpLoggingInterceptor } from '@platform/http/http-logging.interceptor';
 import { ZodValidationPipe } from 'nestjs-zod';
+import { SanitizationPipe } from '@platform/pipes/sanitization.pipe';
 import { AsyncLocalStorageMiddleware } from '@platform/context/als.middleware';
 
 @Module({
   imports: [
-    // Pino structured logging — request log on every route
+    // Pino structured logging — autoLogging disabled; HttpLoggingInterceptor handles per-request logs
     LoggerModule.forRoot({
       pinoHttp: {
         level: process.env['LOG_LEVEL'] ?? 'info',
+        autoLogging: false,
         redact: ['req.headers.authorization', 'req.headers.cookie'],
         customProps: () => ({ service: 'rally-api' }),
         serializers: {
@@ -55,7 +58,11 @@ import { AsyncLocalStorageMiddleware } from '@platform/context/als.middleware';
     // Global exception filter → stable RFC-9457-style error envelope
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
 
-    // Global validation pipe (Zod)
+    // Global interceptor: structured HTTP access log (replaces pino-http autoLogging)
+    { provide: APP_INTERCEPTOR, useClass: HttpLoggingInterceptor },
+
+    // Global pipes — order matters: sanitize XSS BEFORE Zod validates shape
+    { provide: APP_PIPE, useClass: SanitizationPipe },
     { provide: APP_PIPE, useClass: ZodValidationPipe },
   ],
 })

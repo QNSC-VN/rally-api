@@ -16,6 +16,8 @@ const CursorPayloadSchema = z.object({
 
 type CursorPayload = z.infer<typeof CursorPayloadSchema>;
 
+export type { CursorPayload };
+
 export function encodeCursor(payload: CursorPayload): string {
   return Buffer.from(JSON.stringify(payload)).toString('base64url');
 }
@@ -73,4 +75,25 @@ export function buildPageResult<T extends { id: string }>(
       : null;
 
   return { data, pageInfo: { nextCursor, hasNextPage, limit } };
+}
+
+/**
+ * Decode a raw PageQuery into { limit, cursor } for use in repository queries.
+ * Returns null cursor when the query has no cursor (first page).
+ *
+ * @example
+ * const { limit, cursor } = buildPageArgs(query);
+ * const rows = await repo.findMany({
+ *   where: cursor ? sql`(created_at, id) < (${cursor.k[0]}, ${cursor.id})` : undefined,
+ *   limit: limit + 1,
+ * });
+ * return buildPageResult(rows, limit, (r) => [r.createdAt]);
+ */
+export function buildPageArgs(query: PageQuery): {
+  limit: number;
+  cursor: CursorPayload | null;
+} {
+  const limit = query.limit ?? DEFAULT_LIMIT;
+  const cursor = query.cursor ? decodeCursor(query.cursor) : null;
+  return { limit, cursor };
 }

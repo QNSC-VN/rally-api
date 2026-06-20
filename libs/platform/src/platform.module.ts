@@ -13,6 +13,8 @@ import { PermissionGuard } from './auth/permission.guard';
 import { OutboxService } from './outbox/outbox.service';
 import { HealthController } from './observability/health.controller';
 import { Algorithm } from 'jsonwebtoken';
+import { IdempotencyInterceptor } from './http/idempotency.interceptor';
+import { HttpLoggingInterceptor } from './http/http-logging.interceptor';
 
 @Global()
 @Module({
@@ -51,6 +53,8 @@ import { Algorithm } from 'jsonwebtoken';
     JwtAuthGuard,
     PermissionGuard,
     OutboxService,
+    IdempotencyInterceptor,
+    HttpLoggingInterceptor,
   ],
   exports: [
     AppConfigModule,
@@ -62,6 +66,8 @@ import { Algorithm } from 'jsonwebtoken';
     JwtAuthGuard,
     PermissionGuard,
     OutboxService,
+    IdempotencyInterceptor,
+    HttpLoggingInterceptor,
   ],
 })
 export class PlatformModule {}
