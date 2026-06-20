@@ -11,8 +11,8 @@ import { AppConfigService } from './app-config.service';
       validate: (env) => {
         const result = EnvSchema.safeParse(env);
         if (!result.success) {
-          const msg = result.error.errors
-            .map((e) => `  ${e.path.join('.')}: ${e.message}`)
+          const msg = result.error.issues
+            .map((e) => `  ${e.path.map(String).join('.')}: ${e.message}`)
             .join('\n');
           throw new Error(`❌ Invalid environment configuration:\n${msg}`);
         }

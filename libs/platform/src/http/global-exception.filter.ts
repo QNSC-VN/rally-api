@@ -37,7 +37,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         error: {
           code: ErrorCodes.VALIDATION_FAILED,
           message: 'Validation failed',
-          details: exception.getZodError().errors,
+          details: (exception.getZodError() as import('zod').ZodError).issues,
           correlationId,
         },
       });

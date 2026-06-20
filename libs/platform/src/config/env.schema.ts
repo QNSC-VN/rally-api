@@ -45,7 +45,7 @@ export const EnvSchema = z.object({
   OTEL_ENABLED: z
     .string()
     .transform((v) => v === 'true')
-    .default('false'),
+    .default(false),
   OTEL_SERVICE_NAME: z.string().default('rally-api'),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().default('http://localhost:4318'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
@@ -54,7 +54,7 @@ export const EnvSchema = z.object({
   RESILIENCE_ENABLED: z
     .string()
     .transform((v) => v === 'true')
-    .default('true'),
+    .default(true),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
