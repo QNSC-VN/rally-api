@@ -1,0 +1,39 @@
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Auth, ApiCommonErrors } from '@platform';
+import type { JwtPayload } from '@platform';
+import { CurrentUser } from '@modules/identity';
+import { ReportingService } from '../../application/reporting.service';
+import type { SprintBurndownReport, VelocityReport } from '../../domain/reporting.types';
+
+@ApiTags('reporting')
+@Controller('reports')
+@Auth()
+export class ReportingController {
+  constructor(private readonly reportingService: ReportingService) {}
+
+  @Get('sprints/:sprintId/burndown')
+  @ApiOperation({ summary: 'Get sprint burndown chart data' })
+  @ApiParam({ name: 'sprintId', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(401, 404)
+  async getBurndown(
+    @CurrentUser() user: JwtPayload,
+    @Param('sprintId', ParseUUIDPipe) sprintId: string,
+  ): Promise<SprintBurndownReport> {
+    return this.reportingService.getSprintBurndown(user, sprintId);
+  }
+
+  @Get('projects/:projectId/velocity')
+  @ApiOperation({ summary: 'Get sprint velocity for a project' })
+  @ApiParam({ name: 'projectId', type: 'string', format: 'uuid' })
+  @ApiQuery({ name: 'lastNSprints', required: false, type: Number, example: 6 })
+  @ApiCommonErrors(401, 404)
+  async getVelocity(
+    @CurrentUser() user: JwtPayload,
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Query('lastNSprints') lastNSprints?: string,
+  ): Promise<VelocityReport> {
+    const n = lastNSprints ? Math.min(Math.max(parseInt(lastNSprints, 10), 1), 20) : 6;
+    return this.reportingService.getVelocity(user, projectId, n);
+  }
+}

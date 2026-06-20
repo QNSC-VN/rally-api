@@ -59,6 +59,20 @@ export const ErrorCodes = {
   // User
   USER_NOT_FOUND: 'USER_NOT_FOUND',
   USER_DEACTIVATED: 'USER_DEACTIVATED',
+
+  // Collaboration
+  COMMENT_NOT_FOUND: 'COMMENT_NOT_FOUND',
+  ATTACHMENT_NOT_FOUND: 'ATTACHMENT_NOT_FOUND',
+  COMMENT_NOT_OWNED: 'COMMENT_NOT_OWNED',
+
+  // Notifications
+  NOTIFICATION_NOT_FOUND: 'NOTIFICATION_NOT_FOUND',
+
+  // Audit
+  AUDIT_LOG_NOT_FOUND: 'AUDIT_LOG_NOT_FOUND',
+
+  // Reporting
+  REPORT_INVALID_DATE_RANGE: 'REPORT_INVALID_DATE_RANGE',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

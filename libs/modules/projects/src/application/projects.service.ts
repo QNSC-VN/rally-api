@@ -12,6 +12,8 @@ import type {
   WorkflowStatus,
   WorkflowTransition,
   UpdateProjectInput,
+  CreateWorkflowStatusInput,
+  CreateWorkflowTransitionInput,
 } from '../domain/project.types';
 
 /** Default workflow statuses seeded for every new project (mirrors Rally defaults). */
@@ -152,5 +154,67 @@ export class ProjectsService {
     const project = await this.getProject(tenantId, projectId);
     const seq = await this.projectRepo.incrementCounter(projectId);
     return `${project.key}-${seq}`;
+  }
+
+  // ── Workflow status mutations ──────────────────────────────────────────────
+
+  async createStatus(
+    tenantId: string,
+    projectId: string,
+    input: Omit<CreateWorkflowStatusInput, 'id' | 'tenantId' | 'projectId'>,
+  ): Promise<WorkflowStatus> {
+    await this.getProject(tenantId, projectId);
+    const statuses = await this.statusRepo.listByProject(projectId);
+    return this.statusRepo.create({
+      id: uuidv7(),
+      tenantId,
+      projectId,
+      name: input.name,
+      category: input.category,
+      color: input.color,
+      position: input.position ?? statuses.length,
+      isDefault: input.isDefault ?? false,
+    });
+  }
+
+  async deleteStatus(tenantId: string, projectId: string, statusId: string): Promise<void> {
+    await this.getProject(tenantId, projectId);
+    const status = await this.statusRepo.findById(statusId);
+    if (!status || status.projectId !== projectId) {
+      throw new NotFoundException('WORKFLOW_STATUS_NOT_FOUND', 'Workflow status not found');
+    }
+    await this.statusRepo.delete(statusId);
+  }
+
+  async reorderStatuses(tenantId: string, projectId: string, orderedIds: string[]): Promise<void> {
+    await this.getProject(tenantId, projectId);
+    await this.statusRepo.updatePositions(projectId, orderedIds);
+  }
+
+  // ── Workflow transition mutations ─────────────────────────────────────────
+
+  async createTransition(
+    tenantId: string,
+    projectId: string,
+    input: Omit<CreateWorkflowTransitionInput, 'id' | 'tenantId' | 'projectId'>,
+  ): Promise<WorkflowTransition> {
+    await this.getProject(tenantId, projectId);
+    return this.statusRepo.createTransition({
+      id: uuidv7(),
+      tenantId,
+      projectId,
+      fromStatusId: input.fromStatusId,
+      toStatusId: input.toStatusId,
+      name: input.name,
+    });
+  }
+
+  async deleteTransition(tenantId: string, projectId: string, transitionId: string): Promise<void> {
+    await this.getProject(tenantId, projectId);
+    const transition = await this.statusRepo.findTransitionById(transitionId);
+    if (!transition || transition.projectId !== projectId) {
+      throw new NotFoundException('WORKFLOW_STATUS_NOT_FOUND', 'Workflow transition not found');
+    }
+    await this.statusRepo.deleteTransition(transitionId);
   }
 }

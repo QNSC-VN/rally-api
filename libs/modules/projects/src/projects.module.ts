@@ -13,6 +13,6 @@ import { WORKFLOW_STATUS_REPOSITORY } from './domain/ports/workflow-status.repos
     { provide: PROJECT_REPOSITORY, useClass: ProjectDrizzleRepository },
     { provide: WORKFLOW_STATUS_REPOSITORY, useClass: WorkflowStatusDrizzleRepository },
   ],
-  exports: [ProjectsService],
+  exports: [ProjectsService, WORKFLOW_STATUS_REPOSITORY],
 })
 export class ProjectsModule {}

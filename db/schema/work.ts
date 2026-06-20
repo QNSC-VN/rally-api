@@ -14,6 +14,7 @@ import {
   timestamp,
   date,
   jsonb,
+  bigint,
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
@@ -42,7 +43,9 @@ export const projects = workSchema.table(
   (t) => ({
     tenantIdx: index('ix_projects_tenant').on(t.tenantId),
     workspaceIdx: index('ix_projects_workspace').on(t.workspaceId),
-    keyIdx: uniqueIndex('uq_projects_key').on(t.tenantId, t.key).where(sql`deleted_at IS NULL`),
+    keyIdx: uniqueIndex('uq_projects_key')
+      .on(t.tenantId, t.key)
+      .where(sql`deleted_at IS NULL`),
   }),
 );
 
@@ -64,7 +67,7 @@ export const workItems = workSchema.table(
     tenantId: uuid('tenant_id').notNull(),
     projectId: uuid('project_id').notNull(),
     itemKey: varchar('item_key', { length: 30 }).notNull(),
-    type: varchar('type', { length: 20 }).notNull(),  // CHECK: initiative|feature|story|task|defect
+    type: varchar('type', { length: 20 }).notNull(), // CHECK: initiative|feature|story|task|defect
     title: varchar('title', { length: 500 }).notNull(),
     description: text('description'),
     statusId: uuid('status_id').notNull(),
@@ -95,7 +98,9 @@ export const workItems = workSchema.table(
     parentIdx: index('ix_wi_parent').on(t.parentId),
     iterationIdx: index('ix_wi_iteration').on(t.iterationId),
     releaseIdx: index('ix_wi_release').on(t.releaseId),
-    blockedIdx: index('ix_wi_blocked').on(t.tenantId, t.isBlocked).where(sql`is_blocked = true`),
+    blockedIdx: index('ix_wi_blocked')
+      .on(t.tenantId, t.isBlocked)
+      .where(sql`is_blocked = true`),
   }),
 );
 
@@ -108,7 +113,7 @@ export const workflowStatuses = workSchema.table(
     tenantId: uuid('tenant_id').notNull(),
     projectId: uuid('project_id').notNull(),
     name: varchar('name', { length: 100 }).notNull(),
-    category: varchar('category', { length: 20 }).notNull(),  // to_do | in_progress | done
+    category: varchar('category', { length: 20 }).notNull(), // to_do | in_progress | done
     color: varchar('color', { length: 20 }),
     position: integer('position').notNull().default(0),
     isDefault: boolean('is_default').notNull().default(false),
@@ -128,7 +133,7 @@ export const workflowTransitions = workSchema.table(
     id: uuid('id').primaryKey().defaultRandom(),
     tenantId: uuid('tenant_id').notNull(),
     projectId: uuid('project_id').notNull(),
-    fromStatusId: uuid('from_status_id'),   // NULL = any status
+    fromStatusId: uuid('from_status_id'), // NULL = any status
     toStatusId: uuid('to_status_id').notNull(),
     name: varchar('name', { length: 100 }),
     requiredRole: varchar('required_role', { length: 100 }),
@@ -150,7 +155,7 @@ export const sprints = workSchema.table(
     projectId: uuid('project_id').notNull(),
     name: varchar('name', { length: 255 }).notNull(),
     goal: text('goal'),
-    status: varchar('status', { length: 20 }).notNull().default('planned'),  // planned|active|completed
+    status: varchar('status', { length: 20 }).notNull().default('planned'), // planned|active|completed
     startDate: date('start_date'),
     endDate: date('end_date'),
     completedAt: timestamp('completed_at', { withTimezone: true }),
@@ -160,7 +165,9 @@ export const sprints = workSchema.table(
   (t) => ({
     tenantIdx: index('ix_sprints_tenant').on(t.tenantId),
     projectIdx: index('ix_sprints_project').on(t.projectId),
-    activeIdx: index('ix_sprints_active').on(t.projectId, t.status).where(sql`status = 'active'`),
+    activeIdx: index('ix_sprints_active')
+      .on(t.projectId, t.status)
+      .where(sql`status = 'active'`),
   }),
 );
 
@@ -206,5 +213,52 @@ export const releases = workSchema.table(
   (t) => ({
     tenantIdx: index('ix_releases_tenant').on(t.tenantId),
     projectIdx: index('ix_releases_project').on(t.projectId),
+  }),
+);
+
+// ── comments ──────────────────────────────────────────────────────────────
+
+export const comments = workSchema.table(
+  'comments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    workItemId: uuid('work_item_id').notNull(),
+    authorId: uuid('author_id').notNull(),
+    body: text('body').notNull(),
+    parentId: uuid('parent_id'), // NULL = top-level, non-null = threaded reply
+    isEdited: boolean('is_edited').notNull().default(false),
+    editedAt: timestamp('edited_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tenantIdx: index('ix_comments_tenant').on(t.tenantId),
+    workItemIdx: index('ix_comments_work_item').on(t.workItemId),
+    authorIdx: index('ix_comments_author').on(t.authorId),
+    parentIdx: index('ix_comments_parent').on(t.parentId),
+  }),
+);
+
+// ── attachments ───────────────────────────────────────────────────────────
+
+export const attachments = workSchema.table(
+  'attachments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    workItemId: uuid('work_item_id').notNull(),
+    uploadedBy: uuid('uploaded_by').notNull(),
+    filename: varchar('filename', { length: 500 }).notNull(),
+    mimeType: varchar('mime_type', { length: 255 }).notNull(),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    storageKey: varchar('storage_key', { length: 1000 }).notNull(), // S3 object key
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tenantIdx: index('ix_attach_tenant').on(t.tenantId),
+    workItemIdx: index('ix_attach_work_item').on(t.workItemId),
   }),
 );

@@ -20,3 +20,9 @@ export * from './work';
 
 // ── messaging schema ──────────────────────────────────────────────────────
 export * from './messaging';
+
+// ── notifications schema ──────────────────────────────────────────────────
+export * from './notifications';
+
+// ── audit schema ──────────────────────────────────────────────────────────
+export * from './audit';

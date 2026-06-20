@@ -8,6 +8,8 @@ import { TenancyModule } from '@modules/tenancy';
 import { AccessModule } from '@modules/access';
 import { ProjectsModule } from '@modules/projects';
 import { WorkItemsModule } from '@modules/work-items';
+import { PlanningModule } from '@modules/planning';
+import { ReleasesModule } from '@modules/releases';
 import { WorkflowModule } from '@modules/workflow';
 import { CollaborationModule } from '@modules/collaboration';
 import { NotificationsModule } from '@modules/notifications';
@@ -61,6 +63,8 @@ import { AsyncLocalStorageMiddleware } from '@platform/context/als.middleware';
     AccessModule,
     ProjectsModule,
     WorkItemsModule,
+    PlanningModule,
+    ReleasesModule,
     WorkflowModule,
     CollaborationModule,
     NotificationsModule,

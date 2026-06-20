@@ -64,3 +64,12 @@ export interface CreateWorkflowStatusInput {
   position: number;
   isDefault?: boolean;
 }
+
+export interface CreateWorkflowTransitionInput {
+  id: string;
+  tenantId: string;
+  projectId: string;
+  fromStatusId?: string | null;
+  toStatusId: string;
+  name?: string;
+}

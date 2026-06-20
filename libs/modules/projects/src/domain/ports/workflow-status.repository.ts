@@ -2,6 +2,7 @@ import type {
   WorkflowStatus,
   WorkflowTransition,
   CreateWorkflowStatusInput,
+  CreateWorkflowTransitionInput,
 } from '../project.types';
 
 export const WORKFLOW_STATUS_REPOSITORY = Symbol('WORKFLOW_STATUS_REPOSITORY');
@@ -15,4 +16,7 @@ export interface IWorkflowStatusRepository {
   findDefault(projectId: string): Promise<WorkflowStatus | null>;
   canTransition(projectId: string, fromStatusId: string, toStatusId: string): Promise<boolean>;
   listTransitions(projectId: string): Promise<WorkflowTransition[]>;
+  findTransitionById(id: string): Promise<WorkflowTransition | null>;
+  createTransition(input: CreateWorkflowTransitionInput): Promise<WorkflowTransition>;
+  deleteTransition(id: string): Promise<void>;
 }
