@@ -146,4 +146,11 @@ export class ProjectsService {
       );
     }
   }
+
+  /** Used by work-items to generate the next sequential item key (e.g. "PROJ-42"). */
+  async generateItemKey(tenantId: string, projectId: string): Promise<string> {
+    const project = await this.getProject(tenantId, projectId);
+    const seq = await this.projectRepo.incrementCounter(projectId);
+    return `${project.key}-${seq}`;
+  }
 }
