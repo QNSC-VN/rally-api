@@ -1,0 +1,40 @@
+import { z } from 'zod';
+import { createZodDto } from 'nestjs-zod';
+
+// ── Create Project ───────────────────────────────────────────────────────────
+
+export const CreateProjectSchema = z.object({
+  key: z
+    .string()
+    .min(2)
+    .max(10)
+    .regex(/^[A-Za-z][A-Za-z0-9]*$/, 'Key must start with a letter and be alphanumeric'),
+  name: z.string().min(1).max(255).trim(),
+  description: z.string().max(2000).trim().optional(),
+  leadId: z.string().uuid().optional(),
+  workspaceId: z.string().uuid(),
+});
+
+export class CreateProjectDto extends createZodDto(CreateProjectSchema) {}
+
+// ── Update Project ───────────────────────────────────────────────────────────
+
+export const UpdateProjectSchema = z.object({
+  name: z.string().min(1).max(255).trim().optional(),
+  description: z.string().max(2000).trim().optional().nullable(),
+  leadId: z.string().uuid().optional().nullable(),
+  status: z.enum(['active', 'archived']).optional(),
+  settings: z.record(z.string(), z.unknown()).optional(),
+});
+
+export class UpdateProjectDto extends createZodDto(UpdateProjectSchema) {}
+
+// ── Pagination query ─────────────────────────────────────────────────────────
+
+export const ProjectQuerySchema = z.object({
+  workspaceId: z.string().uuid(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().optional(),
+});
+
+export class ProjectQueryDto extends createZodDto(ProjectQuerySchema) {}
