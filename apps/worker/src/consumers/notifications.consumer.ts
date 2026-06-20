@@ -16,7 +16,8 @@
  *   "body": "...",              (optional)
  *   "resourceType": "WORK_ITEM", (optional)
  *   "resourceId": "<uuid>",    (optional)
- *   "metadata": {}             (optional)
+ *   "metadata": {},             (optional)
+ *   "deduplicationId": "<uuid>" (optional — set to outbox eventId for idempotency)
  * }
  *
  * The consumer is disabled (gracefully) when SQS_NOTIFICATIONS_URL is not set.
@@ -36,6 +37,8 @@ interface NotificationMessage {
   resourceType?: string;
   resourceId?: string;
   metadata?: Record<string, unknown>;
+  /** Optional deduplication key — callers should set this to the outbox eventId. */
+  deduplicationId?: string;
 }
 
 @Injectable()
@@ -44,6 +47,8 @@ export class NotificationsConsumer implements OnModuleInit, OnModuleDestroy {
   private sqs!: SQSClient;
   private queueUrl: string | undefined;
   private isShuttingDown = false;
+  /** Cancels in-flight SQS long-poll and sleep on shutdown. */
+  private readonly abortController = new AbortController();
 
   constructor(
     private readonly config: AppConfigService,
@@ -72,6 +77,8 @@ export class NotificationsConsumer implements OnModuleInit, OnModuleDestroy {
 
   onModuleDestroy(): void {
     this.isShuttingDown = true;
+    this.abortController.abort();
+    this.sqs.destroy();
   }
 
   private async startPolling(): Promise<void> {
@@ -90,6 +97,7 @@ export class NotificationsConsumer implements OnModuleInit, OnModuleDestroy {
           WaitTimeSeconds: 20,
           VisibilityTimeout: 30,
         }),
+        { abortSignal: this.abortController.signal },
       );
 
       for (const msg of response.Messages ?? []) {
@@ -125,6 +133,9 @@ export class NotificationsConsumer implements OnModuleInit, OnModuleDestroy {
         resourceType: msg.resourceType,
         resourceId: msg.resourceId,
         metadata: msg.metadata ?? {},
+        // Deduplication: if the same notification is delivered twice,
+        // the unique index on source_event_id silently skips the second insert.
+        sourceEventId: msg.deduplicationId,
       });
       await this.deleteMessage(receiptHandle);
     } catch (err) {
@@ -146,6 +157,17 @@ export class NotificationsConsumer implements OnModuleInit, OnModuleDestroy {
   }
 
   private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => {
+      if (this.abortController.signal.aborted) return resolve();
+      const timer = setTimeout(resolve, ms);
+      this.abortController.signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+    });
   }
 }

@@ -37,11 +37,18 @@ export class NotificationsService {
   }
 
   /** Internal use — called by other services / event handlers to emit notifications. */
-  async send(input: Omit<CreateNotificationInput, 'id'>): Promise<Notification> {
+  async send(input: Omit<CreateNotificationInput, 'id'>): Promise<Notification | null> {
     const notification = await this.notificationRepo.create({
       id: uuidv7(),
       ...input,
     });
+    if (!notification) {
+      this.logger.debug(
+        { type: input.type },
+        'Notification deduplicated (sourceEventId already exists)',
+      );
+      return null;
+    }
     this.logger.debug({ notificationId: notification.id, type: input.type }, 'Notification sent');
     return notification;
   }

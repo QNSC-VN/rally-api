@@ -8,6 +8,7 @@
  *
  * Message format (raw SNS message delivery):
  * {
+ *   "eventId": "<uuid>",
  *   "eventType": "WORK_ITEM_CREATED",
  *   "aggregateType": "WORK_ITEM",
  *   "aggregateId": "<uuid>",
@@ -29,6 +30,8 @@ import { AppConfigService } from '@platform';
 import { AuditService } from '@modules/audit';
 
 interface DomainEventMessage {
+  /** Outbox row UUID — used as deduplication key (sourceEventId). */
+  eventId?: string;
   eventType: string;
   aggregateType: string;
   aggregateId: string;
@@ -43,6 +46,8 @@ export class AuditConsumer implements OnModuleInit, OnModuleDestroy {
   private sqs!: SQSClient;
   private queueUrl: string | undefined;
   private isShuttingDown = false;
+  /** Cancels in-flight SQS long-poll and sleep on shutdown. */
+  private readonly abortController = new AbortController();
 
   constructor(
     private readonly config: AppConfigService,
@@ -71,6 +76,8 @@ export class AuditConsumer implements OnModuleInit, OnModuleDestroy {
 
   onModuleDestroy(): void {
     this.isShuttingDown = true;
+    this.abortController.abort();
+    this.sqs.destroy();
   }
 
   private async startPolling(): Promise<void> {
@@ -92,6 +99,7 @@ export class AuditConsumer implements OnModuleInit, OnModuleDestroy {
           WaitTimeSeconds: 20,
           VisibilityTimeout: 60,
         }),
+        { abortSignal: this.abortController.signal },
       );
 
       for (const msg of response.Messages ?? []) {
@@ -129,6 +137,9 @@ export class AuditConsumer implements OnModuleInit, OnModuleDestroy {
           (event.payload['changes'] as { before?: unknown; after?: unknown } | undefined) ??
           undefined,
         metadata: { source: 'domain-event', occurredAt: event.occurredAt },
+        // Deduplication: if the same outbox event is delivered twice,
+        // the unique index on source_event_id silently skips the second insert.
+        sourceEventId: event.eventId,
       });
       await this.deleteMessage(receiptHandle);
     } catch (err) {
@@ -150,6 +161,17 @@ export class AuditConsumer implements OnModuleInit, OnModuleDestroy {
   }
 
   private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => {
+      if (this.abortController.signal.aborted) return resolve();
+      const timer = setTimeout(resolve, ms);
+      this.abortController.signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+    });
   }
 }

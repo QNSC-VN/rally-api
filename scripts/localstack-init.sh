@@ -37,6 +37,14 @@ echo "SQS notifications: $NOTIFICATIONS_URL"
 echo "SQS audit:         $AUDIT_URL"
 echo "SQS reporting:     $REPORTING_URL"
 
+# ── Dead-letter queues (DLQ) ───────────────────────────────────────────────
+# Messages that fail processing 5 times are moved here for inspection/replay.
+NOTIFICATIONS_DLQ_URL=$($AWS sqs create-queue --queue-name rally-notifications-dlq --query 'QueueUrl')
+AUDIT_DLQ_URL=$($AWS sqs create-queue         --queue-name rally-audit-dlq          --query 'QueueUrl')
+
+echo "SQS notifications DLQ: $NOTIFICATIONS_DLQ_URL"
+echo "SQS audit DLQ:         $AUDIT_DLQ_URL"
+
 # ── Queue ARNs (needed for SNS subscription) ───────────────────────────────
 NOTIFICATIONS_ARN=$($AWS sqs get-queue-attributes \
   --queue-url "$NOTIFICATIONS_URL" --attribute-names QueueArn \
@@ -45,6 +53,25 @@ NOTIFICATIONS_ARN=$($AWS sqs get-queue-attributes \
 AUDIT_ARN=$($AWS sqs get-queue-attributes \
   --queue-url "$AUDIT_URL" --attribute-names QueueArn \
   --query 'Attributes.QueueArn')
+
+NOTIFICATIONS_DLQ_ARN=$($AWS sqs get-queue-attributes \
+  --queue-url "$NOTIFICATIONS_DLQ_URL" --attribute-names QueueArn \
+  --query 'Attributes.QueueArn')
+
+AUDIT_DLQ_ARN=$($AWS sqs get-queue-attributes \
+  --queue-url "$AUDIT_DLQ_URL" --attribute-names QueueArn \
+  --query 'Attributes.QueueArn')
+
+# ── Attach RedrivePolicy — after 5 receive attempts move to DLQ ───────────
+$AWS sqs set-queue-attributes \
+  --queue-url "$NOTIFICATIONS_URL" \
+  --attributes "{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"$NOTIFICATIONS_DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"5\\\"}\"}"
+
+$AWS sqs set-queue-attributes \
+  --queue-url "$AUDIT_URL" \
+  --attributes "{\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"$AUDIT_DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"5\\\"}\"}"
+
+echo "RedrivePolicy attached (maxReceiveCount=5)"
 
 # ── SNS → SQS subscriptions (raw message delivery) ────────────────────────
 # Raw delivery = SQS message body is the plain JSON string passed to sns.publish()
@@ -76,4 +103,8 @@ echo "SNS_TOPIC_ARN=$TOPIC_ARN"
 echo "SQS_NOTIFICATIONS_URL=$NOTIFICATIONS_URL"
 echo "SQS_AUDIT_URL=$AUDIT_URL"
 echo "SQS_REPORTING_URL=$REPORTING_URL"
+echo ""
+echo "# Dead-letter queues (for inspection / replay tooling):"
+echo "SQS_NOTIFICATIONS_DLQ_URL=$NOTIFICATIONS_DLQ_URL"
+echo "SQS_AUDIT_DLQ_URL=$AUDIT_DLQ_URL"
 echo "========================================================"

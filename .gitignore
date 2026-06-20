@@ -5,6 +5,13 @@ node_modules/
 # Build output
 dist/
 
+# TypeScript compiled artifacts that can leak outside dist/ during monorepo builds.
+# All source is .ts; .js/.js.map in libs/ and db/ are never hand-written.
+libs/**/*.js
+libs/**/*.js.map
+db/**/*.js
+db/**/*.js.map
+
 # Environment — NEVER commit secrets
 .env
 .env.local

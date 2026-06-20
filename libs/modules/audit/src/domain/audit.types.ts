@@ -12,6 +12,7 @@ export interface AuditLog {
   ipAddress: string | null;
   userAgent: string | null;
   occurredAt: Date;
+  sourceEventId: string | null;
 }
 
 export interface CreateAuditLogInput {
@@ -27,4 +28,6 @@ export interface CreateAuditLogInput {
   metadata?: Record<string, unknown>;
   ipAddress?: string;
   userAgent?: string;
+  /** Outbox eventId — used for at-most-once deduplication via ON CONFLICT DO NOTHING. */
+  sourceEventId?: string;
 }

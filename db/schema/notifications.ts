@@ -11,6 +11,7 @@ import {
   jsonb,
   timestamp,
   index,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
 export const notificationsSchema = pgSchema('notifications');
@@ -31,10 +32,13 @@ export const inAppNotifications = notificationsSchema.table(
     isRead: boolean('is_read').notNull().default(false),
     readAt: timestamp('read_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // Populated by SQS consumer with the outbox eventId for deduplication.
+    sourceEventId: uuid('source_event_id'),
   },
   (t) => ({
     recipientIdx: index('ix_ian_recipient').on(t.tenantId, t.recipientId, t.isRead),
     createdIdx: index('ix_ian_created').on(t.recipientId, t.createdAt),
     resourceIdx: index('ix_ian_resource').on(t.resourceType, t.resourceId),
+    sourceEventIdx: uniqueIndex('uq_ian_source_event_id').on(t.sourceEventId),
   }),
 );

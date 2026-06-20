@@ -10,8 +10,8 @@ import type { IAuditRepository, AuditFilters } from '../../domain/ports/audit.re
 export class AuditDrizzleRepository implements IAuditRepository {
   constructor(@InjectDrizzle() private readonly db: DrizzleDB) {}
 
-  async create(input: CreateAuditLogInput): Promise<AuditLog> {
-    const rows = await this.db
+  async create(input: CreateAuditLogInput): Promise<void> {
+    await this.db
       .insert(auditLogs)
       .values({
         id: input.id,
@@ -26,9 +26,11 @@ export class AuditDrizzleRepository implements IAuditRepository {
         metadata: input.metadata ?? {},
         ipAddress: input.ipAddress,
         userAgent: input.userAgent,
+        sourceEventId: input.sourceEventId,
       })
-      .returning();
-    return rows[0] as AuditLog;
+      // When sourceEventId is non-null and already exists, silently skip the insert.
+      // When null (direct service calls), no conflict occurs (NULL != NULL in PG).
+      .onConflictDoNothing({ target: auditLogs.sourceEventId });
   }
 
   async listForTenant(

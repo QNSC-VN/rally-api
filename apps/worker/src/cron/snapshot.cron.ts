@@ -24,6 +24,8 @@ import { sprints, workItems, workflowStatuses } from '../../../../db/schema/work
 @Injectable()
 export class SnapshotCronService {
   private readonly logger = new Logger(SnapshotCronService.name);
+  /** Prevents a second cron run from starting if the previous one is still running. */
+  private isRunning = false;
 
   constructor(
     @InjectDrizzle() private readonly db: DrizzleDB,
@@ -33,6 +35,19 @@ export class SnapshotCronService {
   /** Runs at midnight UTC every day. */
   @Cron('0 0 * * *', { name: 'daily-sprint-snapshot', timeZone: 'UTC' })
   async takeDailySnapshots(): Promise<void> {
+    if (this.isRunning) {
+      this.logger.warn('Snapshot cron still running from previous tick — skipping');
+      return;
+    }
+    this.isRunning = true;
+    try {
+      await this.runSnapshots();
+    } finally {
+      this.isRunning = false;
+    }
+  }
+
+  private async runSnapshots(): Promise<void> {
     // Use the server date in UTC (cron is anchored to UTC via timeZone option)
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     this.logger.log(`Taking daily sprint snapshots for ${today}`);

@@ -10,7 +10,8 @@ export interface INotificationRepository {
     unreadOnly: boolean,
     limit: number,
   ): Promise<Notification[]>;
-  create(input: CreateNotificationInput): Promise<Notification>;
+  /** Idempotent — returns null when sourceEventId already exists (deduplicated). */
+  create(input: CreateNotificationInput): Promise<Notification | null>;
   markRead(id: string): Promise<void>;
   markAllRead(tenantId: string, recipientId: string): Promise<void>;
 }

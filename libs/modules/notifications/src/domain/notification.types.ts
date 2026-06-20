@@ -12,6 +12,7 @@ export interface Notification {
   isRead: boolean;
   readAt: Date | null;
   createdAt: Date;
+  sourceEventId: string | null;
 }
 
 export interface CreateNotificationInput {
@@ -25,4 +26,6 @@ export interface CreateNotificationInput {
   resourceType?: string;
   resourceId?: string;
   metadata?: Record<string, unknown>;
+  /** Outbox eventId — used for at-most-once deduplication via ON CONFLICT DO NOTHING. */
+  sourceEventId?: string;
 }

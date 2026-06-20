@@ -9,7 +9,7 @@
  *
  * Delivery guarantee: at-least-once. Consumers must be idempotent on eventId.
  */
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { and, asc, lt, eq } from 'drizzle-orm';
@@ -21,10 +21,12 @@ const MAX_ATTEMPTS = 5;
 const BATCH_SIZE = 50;
 
 @Injectable()
-export class OutboxRelayService implements OnModuleInit {
+export class OutboxRelayService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(OutboxRelayService.name);
   private sns!: SNSClient;
   private topicArn: string | undefined;
+  /** Prevents concurrent relay runs if a batch takes longer than the 5s cron interval. */
+  private isRelaying = false;
 
   constructor(
     @InjectDrizzle() private readonly db: DrizzleDB,
@@ -49,87 +51,103 @@ export class OutboxRelayService implements OnModuleInit {
     }
   }
 
+  onModuleDestroy(): void {
+    this.sns.destroy();
+  }
+
   /** Runs every 5 seconds. */
   @Cron('*/5 * * * * *', { name: 'outbox-relay' })
   async relay(): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      const batch = await tx
-        .select({
-          id: outboxEvents.id,
-          eventType: outboxEvents.eventType,
-          aggregateType: outboxEvents.aggregateType,
-          aggregateId: outboxEvents.aggregateId,
-          tenantId: outboxEvents.tenantId,
-          payload: outboxEvents.payload,
-          occurredAt: outboxEvents.occurredAt,
-          attempts: outboxEvents.attempts,
-        })
-        .from(outboxEvents)
-        .where(and(eq(outboxEvents.status, 'pending'), lt(outboxEvents.attempts, MAX_ATTEMPTS)))
-        .orderBy(asc(outboxEvents.createdAt))
-        .limit(BATCH_SIZE)
-        .for('update', { skipLocked: true });
+    if (this.isRelaying) {
+      this.logger.warn('Previous relay run still in progress — skipping tick');
+      return;
+    }
+    this.isRelaying = true;
+    try {
+      await this.db.transaction(async (tx) => {
+        const batch = await tx
+          .select({
+            id: outboxEvents.id,
+            eventType: outboxEvents.eventType,
+            aggregateType: outboxEvents.aggregateType,
+            aggregateId: outboxEvents.aggregateId,
+            tenantId: outboxEvents.tenantId,
+            payload: outboxEvents.payload,
+            occurredAt: outboxEvents.occurredAt,
+            attempts: outboxEvents.attempts,
+          })
+          .from(outboxEvents)
+          .where(and(eq(outboxEvents.status, 'pending'), lt(outboxEvents.attempts, MAX_ATTEMPTS)))
+          .orderBy(asc(outboxEvents.createdAt))
+          .limit(BATCH_SIZE)
+          .for('update', { skipLocked: true });
 
-      if (!batch.length) return;
+        if (!batch.length) return;
 
-      this.logger.debug(`Relaying ${batch.length} outbox event(s)`);
+        this.logger.debug(`Relaying ${batch.length} outbox event(s)`);
 
-      for (const row of batch) {
-        try {
-          if (this.topicArn) {
-            await this.sns.send(
-              new PublishCommand({
-                TopicArn: this.topicArn,
-                Message: JSON.stringify({
-                  eventType: row.eventType,
-                  aggregateType: row.aggregateType,
-                  aggregateId: row.aggregateId,
-                  tenantId: row.tenantId,
-                  payload: row.payload,
-                  occurredAt: row.occurredAt,
+        for (const row of batch) {
+          try {
+            if (this.topicArn) {
+              await this.sns.send(
+                new PublishCommand({
+                  TopicArn: this.topicArn,
+                  Message: JSON.stringify({
+                    // eventId is the deduplication key for downstream consumers.
+                    // Including it allows idempotent processing via ON CONFLICT DO NOTHING.
+                    eventId: row.id,
+                    eventType: row.eventType,
+                    aggregateType: row.aggregateType,
+                    aggregateId: row.aggregateId,
+                    tenantId: row.tenantId,
+                    payload: row.payload,
+                    occurredAt: row.occurredAt,
+                  }),
+                  MessageAttributes: {
+                    eventType: {
+                      DataType: 'String',
+                      StringValue: row.eventType,
+                    },
+                    aggregateType: {
+                      DataType: 'String',
+                      StringValue: row.aggregateType,
+                    },
+                    tenantId: {
+                      DataType: 'String',
+                      StringValue: row.tenantId,
+                    },
+                  },
                 }),
-                MessageAttributes: {
-                  eventType: {
-                    DataType: 'String',
-                    StringValue: row.eventType,
-                  },
-                  aggregateType: {
-                    DataType: 'String',
-                    StringValue: row.aggregateType,
-                  },
-                  tenantId: {
-                    DataType: 'String',
-                    StringValue: row.tenantId,
-                  },
-                },
-              }),
+              );
+            }
+
+            await tx
+              .update(outboxEvents)
+              .set({ status: 'published', publishedAt: new Date() })
+              .where(eq(outboxEvents.id, row.id));
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            const newAttempts = row.attempts + 1;
+            const newStatus = newAttempts >= MAX_ATTEMPTS ? 'failed' : 'pending';
+
+            await tx
+              .update(outboxEvents)
+              .set({
+                status: newStatus,
+                attempts: newAttempts,
+                lastError: errMsg,
+              })
+              .where(eq(outboxEvents.id, row.id));
+
+            this.logger.error(
+              { eventId: row.id, err },
+              `Relay failed for ${row.eventType} (attempt ${newAttempts}/${MAX_ATTEMPTS})`,
             );
           }
-
-          await tx
-            .update(outboxEvents)
-            .set({ status: 'published', publishedAt: new Date() })
-            .where(eq(outboxEvents.id, row.id));
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          const newAttempts = row.attempts + 1;
-          const newStatus = newAttempts >= MAX_ATTEMPTS ? 'failed' : 'pending';
-
-          await tx
-            .update(outboxEvents)
-            .set({
-              status: newStatus,
-              attempts: newAttempts,
-              lastError: errMsg,
-            })
-            .where(eq(outboxEvents.id, row.id));
-
-          this.logger.error(
-            { eventId: row.id, err },
-            `Relay failed for ${row.eventType} (attempt ${newAttempts}/${MAX_ATTEMPTS})`,
-          );
         }
-      }
-    });
+      });
+    } finally {
+      this.isRelaying = false;
+    }
   }
 }

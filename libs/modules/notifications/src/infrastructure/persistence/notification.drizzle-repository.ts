@@ -42,7 +42,7 @@ export class NotificationDrizzleRepository implements INotificationRepository {
     return rows as Notification[];
   }
 
-  async create(input: CreateNotificationInput): Promise<Notification> {
+  async create(input: CreateNotificationInput): Promise<Notification | null> {
     const rows = await this.db
       .insert(inAppNotifications)
       .values({
@@ -57,9 +57,13 @@ export class NotificationDrizzleRepository implements INotificationRepository {
         resourceId: input.resourceId,
         metadata: input.metadata ?? {},
         isRead: false,
+        sourceEventId: input.sourceEventId,
       })
+      // When sourceEventId is non-null and already exists, return null (deduplicated).
+      // When null, no conflict occurs (NULL != NULL in PG).
+      .onConflictDoNothing({ target: inAppNotifications.sourceEventId })
       .returning();
-    return rows[0] as Notification;
+    return (rows[0] as Notification | undefined) ?? null;
   }
 
   async markRead(id: string): Promise<void> {
