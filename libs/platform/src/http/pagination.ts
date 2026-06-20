@@ -1,0 +1,76 @@
+import { z } from 'zod';
+import { ErrorCodes } from '../errors/error-codes';
+import { PreconditionFailedException } from '../errors/exceptions';
+
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 100;
+
+// ── Cursor internal shape (base64url-encoded opaque token) ───────────────────
+
+const CursorPayloadSchema = z.object({
+  v: z.literal(1),
+  k: z.array(z.unknown()),
+  id: z.string().uuid(),
+  d: z.enum(['asc', 'desc']),
+});
+
+type CursorPayload = z.infer<typeof CursorPayloadSchema>;
+
+export function encodeCursor(payload: CursorPayload): string {
+  return Buffer.from(JSON.stringify(payload)).toString('base64url');
+}
+
+export function decodeCursor(cursor: string): CursorPayload {
+  try {
+    const raw: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    return CursorPayloadSchema.parse(raw);
+  } catch {
+    throw new PreconditionFailedException(ErrorCodes.INVALID_CURSOR, 'Invalid or tampered cursor');
+  }
+}
+
+// ── Request schema ────────────────────────────────────────────────────────────
+
+export const PageQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
+  cursor: z.string().optional(),
+  sort: z.string().optional(),
+});
+
+export type PageQuery = z.infer<typeof PageQuerySchema>;
+
+// ── Response types ────────────────────────────────────────────────────────────
+
+export interface PageInfo {
+  nextCursor: string | null;
+  hasNextPage: boolean;
+  limit: number;
+}
+
+export interface PagedResult<T> {
+  data: T[];
+  pageInfo: PageInfo;
+}
+
+/**
+ * Build paged result.
+ * Fetches limit + 1 items; presence of the extra item signals hasNextPage.
+ */
+export function buildPageResult<T extends { id: string }>(
+  /** items fetched with limit + 1 */
+  rawItems: T[],
+  limit: number,
+  buildCursorKey: (item: T) => unknown[],
+  direction: 'asc' | 'desc' = 'asc',
+): PagedResult<T> {
+  const hasNextPage = rawItems.length > limit;
+  const data = hasNextPage ? rawItems.slice(0, limit) : rawItems;
+  const last = data.at(-1);
+
+  const nextCursor =
+    hasNextPage && last
+      ? encodeCursor({ v: 1, k: buildCursorKey(last), id: last.id, d: direction })
+      : null;
+
+  return { data, pageInfo: { nextCursor, hasNextPage, limit } };
+}

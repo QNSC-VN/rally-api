@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+
+# Environment — NEVER commit secrets
+.env
+.env.local
+.env.*.local
+
+# Drizzle
+db/migrations/*.sql
+!db/migrations/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+
+# Coverage
+coverage/
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo

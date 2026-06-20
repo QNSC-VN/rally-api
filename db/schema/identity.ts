@@ -1,0 +1,75 @@
+/**
+ * identity schema — users, auth_sessions
+ * Canonical DDL: 05_Architecture/DATABASE_SCHEMA.md §9
+ */
+import {
+  pgSchema,
+  uuid,
+  varchar,
+  text,
+  boolean,
+  integer,
+  timestamp,
+  jsonb,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
+
+export const identitySchema = pgSchema('identity');
+
+// ── users ─────────────────────────────────────────────────────────────────
+
+export const users = identitySchema.table(
+  'users',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    email: varchar('email', { length: 320 }).notNull(),
+    displayName: varchar('display_name', { length: 255 }).notNull(),
+    avatarUrl: varchar('avatar_url', { length: 2048 }),
+    passwordHash: text('password_hash'),
+    emailVerified: boolean('email_verified').notNull().default(false),
+    mfaEnabled: boolean('mfa_enabled').notNull().default(false),
+    mfaSecret: text('mfa_secret'),
+    locale: varchar('locale', { length: 10 }).notNull().default('en'),
+    timezone: varchar('timezone', { length: 64 }).notNull().default('UTC'),
+    sessionVersion: integer('session_version').notNull().default(1),
+    lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => ({
+    tenantIdx: index('ix_users_tenant').on(t.tenantId),
+    emailIdx: uniqueIndex('uq_users_email').on(t.email).where(sql`deleted_at IS NULL`),
+    tenantEmailIdx: uniqueIndex('uq_users_tenant_email')
+      .on(t.tenantId, t.email)
+      .where(sql`deleted_at IS NULL`),
+  }),
+);
+
+// ── auth_sessions ─────────────────────────────────────────────────────────
+
+export const authSessions = identitySchema.table(
+  'auth_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    familyId: uuid('family_id').notNull(),
+    deviceInfo: jsonb('device_info'),
+    ipAddress: varchar('ip_address', { length: 45 }),
+    isRevoked: boolean('is_revoked').notNull().default(false),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tenantIdx: index('ix_auth_sessions_tenant').on(t.tenantId),
+    tokenHashIdx: uniqueIndex('uq_auth_sessions_token_hash').on(t.tokenHash),
+    userIdx: index('ix_auth_sessions_user').on(t.userId),
+    familyIdx: index('ix_auth_sessions_family').on(t.familyId),
+  }),
+);
+
+import { sql } from 'drizzle-orm';
