@@ -42,6 +42,16 @@ services:
       - '4566:4566'
     volumes:
       - localstack_data:/var/lib/localstack
+      # Init hook: runs automatically when LocalStack is ready.
+      # Creates SNS topic, SQS queues, DLQs, and SNS→SQS subscriptions.
+      # Mirrors how db/init/ bootstraps Postgres on first start.
+      - ./scripts/localstack:/etc/localstack/init/ready.d:ro
+    healthcheck:
+      test: ['CMD', 'awslocal', 'sqs', 'list-queues']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
 volumes:
   postgres_data:
