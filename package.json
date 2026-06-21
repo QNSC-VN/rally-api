@@ -22,8 +22,8 @@
     "test:cov": "vitest run --coverage",
     "test:e2e": "vitest run --config test/vitest.e2e.config.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "tsx db/migrate.ts",
-    "db:seed": "tsx db/seeds/seed.ts",
+    "db:migrate": "NODE_OPTIONS='--env-file=.env' tsx db/migrate.ts",
+    "db:seed": "NODE_OPTIONS='--env-file=.env' tsx db/seeds/seed.ts",
     "db:studio": "drizzle-kit studio",
     "prepare": "husky"
   },

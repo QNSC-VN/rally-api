@@ -20,7 +20,7 @@
 #   - api / worker / migrator stages: minimal runtime images
 # =============================================================================
 
-ARG NODE_VERSION=22
+ARG NODE_VERSION=24
 ARG ALPINE_VERSION=3.21
 ARG PNPM_VERSION=10.33.2
 
