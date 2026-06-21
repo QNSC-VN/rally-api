@@ -18,6 +18,7 @@ import {
 } from '../domain/ports/project-member.repository';
 import type {
   Project,
+  ProjectWithStats,
   WorkflowStatus,
   WorkflowTransition,
   ProjectTeamLink,
@@ -48,8 +49,8 @@ export class ProjectsService {
     actor: JwtPayload,
     workspaceId: string,
     args: { limit: number; cursor: CursorPayload | null },
-  ): Promise<PagedResult<Project>> {
-    return this.projectRepo.listByWorkspace(workspaceId, actor.tenantId, args);
+  ): Promise<PagedResult<ProjectWithStats>> {
+    return this.projectRepo.listByWorkspaceWithStats(workspaceId, actor.tenantId, args);
   }
 
   async createProject(
@@ -127,7 +128,14 @@ export class ProjectsService {
     projectId: string,
     input: UpdateProjectInput,
   ): Promise<Project> {
-    await this.getProject(tenantId, projectId);
+    const project = await this.getProject(tenantId, projectId);
+    // PRJ-FR-010: archived projects are read-only; only a status restore is allowed
+    if (project.status === 'archived' && input.status !== 'active') {
+      throw new PreconditionFailedException(
+        'PROJECT_ARCHIVED',
+        'This project is archived and read-only. Only restoring it to active is permitted.',
+      );
+    }
     return this.projectRepo.update(projectId, input);
   }
 
@@ -167,6 +175,13 @@ export class ProjectsService {
   /** Used by work-items to generate the next sequential item key (e.g. "PROJ-42"). */
   async generateItemKey(tenantId: string, projectId: string): Promise<string> {
     const project = await this.getProject(tenantId, projectId);
+    // PRJ-FR-010: archived projects are read-only; block new work item creation
+    if (project.status === 'archived') {
+      throw new PreconditionFailedException(
+        'PROJECT_ARCHIVED',
+        'Cannot create work items in an archived project.',
+      );
+    }
     const seq = await this.projectRepo.incrementCounter(projectId);
     return `${project.key}-${seq}`;
   }

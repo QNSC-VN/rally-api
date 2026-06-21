@@ -34,7 +34,9 @@ import type { Label } from '../../domain/label.types';
 
 // ── Mappers ──────────────────────────────────────────────────────────────────
 
-function toProjectDto(p: Project): ProjectResponseDto {
+function toProjectDto(
+  p: Project & { memberCount?: number; leadName?: string | null },
+): ProjectResponseDto {
   return {
     id: p.id,
     tenantId: p.tenantId,
@@ -43,7 +45,9 @@ function toProjectDto(p: Project): ProjectResponseDto {
     name: p.name,
     description: p.description,
     leadId: p.leadId,
+    leadName: p.leadName ?? null,
     status: p.status,
+    memberCount: p.memberCount ?? 0,
     settings: p.settings,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),

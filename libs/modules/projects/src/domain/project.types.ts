@@ -62,6 +62,12 @@ export interface UpdateProjectInput {
   settings?: Record<string, unknown>;
 }
 
+/** Project enriched with aggregated stats for the list endpoint */
+export interface ProjectWithStats extends Project {
+  memberCount: number;
+  leadName: string | null;
+}
+
 export interface CreateWorkflowStatusInput {
   id: string;
   tenantId: string;
