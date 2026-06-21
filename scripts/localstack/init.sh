@@ -74,7 +74,17 @@ $AWS sns subscribe \
   --attributes '{"RawMessageDelivery":"true","FilterPolicy":"{\"eventType\":[{\"prefix\":\"NOTIFICATION\"}]}"}' \
   > /dev/null
 
+# ── S3 bucket ──────────────────────────────────────────────────────────────
+$AWS s3api create-bucket \
+  --bucket rally-dev-attachments \
+  --create-bucket-configuration LocationConstraint="$REGION" \
+  > /dev/null
+
 echo "[localstack-init] Done."
+echo "  SNS_TOPIC_ARN=$TOPIC_ARN"
+echo "  SQS_NOTIFICATIONS_URL=$NOTIFICATIONS_URL"
+echo "  SQS_AUDIT_URL=$AUDIT_URL"
+echo "  SQS_REPORTING_URL=$REPORTING_URL"
 echo "  SNS_TOPIC_ARN=$TOPIC_ARN"
 echo "  SQS_NOTIFICATIONS_URL=$NOTIFICATIONS_URL"
 echo "  SQS_AUDIT_URL=$AUDIT_URL"
