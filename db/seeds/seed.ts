@@ -7,15 +7,23 @@ try {
 
 /**
  * Seed script — creates the first tenant, workspace, admin user,
- * system roles + permission catalogue, and default workflow for dev/test.
+ * system roles + permission catalogue, default workflow for dev/test,
+ * and sample projects that mirror the real business flow:
+ *   project → counter → lead-as-project-member → workflow statuses
  *
  * Run: pnpm db:seed
  * Idempotent — safe to run multiple times.
  */
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
+import { uuidv7 } from 'uuidv7';
 import * as argon2 from 'argon2';
+import { and, eq } from 'drizzle-orm';
 import * as schema from '../schema';
+// projectMembers must be imported directly — the barrel export has a tsx/CJS
+// module-resolution edge case that causes it to be undefined at runtime.
+import { projectMembers } from '../schema/work';
+import { DEFAULT_WORKFLOW_STATUSES } from '../../libs/modules/projects/src/domain/project.constants';
 
 const url = process.env['DATABASE_URL'];
 if (!url) {
@@ -29,7 +37,125 @@ const db = drizzle(pool, { schema });
 const SYSTEM_TENANT_ID = '00000000-0000-7000-8000-000000000001';
 const ADMIN_USER_ID = '00000000-0000-7000-8000-000000000002';
 const WORKSPACE_ID = '00000000-0000-7000-8000-000000000003';
-// PROJECT_ID reserved for Phase 0 seeding
+
+// ── Sample projects ───────────────────────────────────────────────────────────
+// Format: { id, key, name, description }
+// All are owned by ADMIN_USER_ID and belong to the default workspace.
+const SEED_PROJECTS = [
+  {
+    id: '00000000-0000-7000-8000-000000000010',
+    key: 'NXP',
+    name: 'NX Platform',
+    description: 'Core NX mono-repo platform upgrades and tooling improvements.',
+  },
+  {
+    id: '00000000-0000-7000-8000-000000000011',
+    key: 'MOB',
+    name: 'Mobile App',
+    description: 'Cross-platform React Native application for iOS and Android.',
+  },
+  {
+    id: '00000000-0000-7000-8000-000000000012',
+    key: 'OPS',
+    name: 'DevOps & Infrastructure',
+    description: 'CI/CD pipelines, cloud infrastructure, and observability stack.',
+  },
+  {
+    id: '00000000-0000-7000-8000-000000000013',
+    key: 'LEG',
+    name: 'Legacy Migration',
+    description: 'Incremental migration of legacy monolith services to micro-services.',
+  },
+  {
+    id: '00000000-0000-7000-8000-000000000014',
+    key: 'PRT',
+    name: 'Partner Portal',
+    description: 'Self-service portal for external partners and API consumers.',
+  },
+] as const;
+
+async function seedProject(project: {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+}) {
+  // 1. Insert project row with fixed UUID (idempotent by primary key).
+  //    If a project with the same key already exists (dev DB), fall back to
+  //    the existing row so subsequent steps use the correct project_id.
+  const inserted = await db
+    .insert(schema.projects)
+    .values({
+      id: project.id,
+      tenantId: SYSTEM_TENANT_ID,
+      workspaceId: WORKSPACE_ID,
+      key: project.key,
+      name: project.name,
+      description: project.description,
+      leadId: ADMIN_USER_ID,
+      status: 'active',
+    })
+    .onConflictDoNothing()
+    .returning({ id: schema.projects.id });
+
+  // Resolve the actual project ID (fresh DB → inserted ID; existing DB → look up by key)
+  let actualId = inserted[0]?.id;
+  if (!actualId) {
+    const existing = await db
+      .select({ id: schema.projects.id })
+      .from(schema.projects)
+      .where(
+        and(eq(schema.projects.tenantId, SYSTEM_TENANT_ID), eq(schema.projects.key, project.key)),
+      )
+      .limit(1);
+    actualId = existing[0]?.id;
+  }
+  if (!actualId) return; // should never happen
+
+  // 2. Initialise the item-key counter (mirrors ProjectsService.createProject)
+  await db
+    .insert(schema.projectCounters)
+    .values({ projectId: actualId, tenantId: SYSTEM_TENANT_ID, lastItemNumber: 0 })
+    .onConflictDoNothing();
+
+  // 3. Add the lead as the first active project member if not already present
+  await db
+    .insert(projectMembers)
+    .values({
+      id: uuidv7(),
+      tenantId: SYSTEM_TENANT_ID,
+      projectId: actualId,
+      userId: ADMIN_USER_ID,
+      status: 'active',
+    })
+    .onConflictDoNothing();
+
+  // 4. Seed default workflow statuses only if none exist yet for this project
+  //    (avoids duplicating the 4 default statuses on re-seed)
+  const existingStatuses = await db
+    .select({ id: schema.workflowStatuses.id })
+    .from(schema.workflowStatuses)
+    .where(eq(schema.workflowStatuses.projectId, actualId))
+    .limit(1);
+
+  if (existingStatuses.length === 0) {
+    for (const s of DEFAULT_WORKFLOW_STATUSES) {
+      await db
+        .insert(schema.workflowStatuses)
+        .values({
+          id: uuidv7(),
+          tenantId: SYSTEM_TENANT_ID,
+          projectId: actualId,
+          name: s.name,
+          category: s.category,
+          color: s.color,
+          position: s.position,
+          isDefault: s.isDefault,
+        })
+        .onConflictDoNothing();
+    }
+  }
+}
 
 async function seed() {
   console.log('Seeding...');
@@ -123,7 +249,12 @@ async function seed() {
     })
     .onConflictDoNothing();
 
-  console.log('✅  Seed complete');
+  // ── Projects (real business flow: project + counter + member + statuses) ──
+  for (const project of SEED_PROJECTS) {
+    await seedProject(project);
+  }
+
+  console.log(`✅  Seed complete — ${SEED_PROJECTS.length} projects seeded`);
 }
 
 seed()
