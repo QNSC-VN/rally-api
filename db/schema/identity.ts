@@ -72,6 +72,10 @@ export const authSessions = identitySchema.table(
     tokenHashIdx: uniqueIndex('uq_auth_sessions_token_hash').on(t.tokenHash),
     userIdx: index('ix_auth_sessions_user').on(t.userId),
     familyIdx: index('ix_auth_sessions_family').on(t.familyId),
+    // Partial index — most lookups only need active sessions; halves index size
+    activeUserIdx: index('ix_auth_sessions_active_user')
+      .on(t.userId)
+      .where(sql`is_revoked = false`),
   }),
 );
 

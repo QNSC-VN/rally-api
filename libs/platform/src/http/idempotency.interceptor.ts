@@ -6,6 +6,7 @@ import {
   NestInterceptor,
   UseInterceptors,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import type { FastifyRequest } from 'fastify';
 import { Observable, from, of } from 'rxjs';
 import { switchMap, tap } from 'rxjs/operators';
@@ -39,9 +40,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() !== 'http') return next.handle();
 
-    const req = context
-      .switchToHttp()
-      .getRequest<FastifyRequest & { user?: { id?: string } }>();
+    const req = context.switchToHttp().getRequest<FastifyRequest & { user?: { id?: string } }>();
 
     if (!IDEMPOTENCY_METHODS.has(req.method)) return next.handle();
 
@@ -49,7 +48,12 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const idempotencyKey = Array.isArray(headerVal) ? headerVal[0] : headerVal;
     if (!idempotencyKey) return next.handle();
 
-    const userId = req.user?.id ?? 'anon';
+    const userId =
+      req.user?.id ??
+      createHash('sha256')
+        .update(`${req.ip ?? ''}:${(req.headers['user-agent'] as string | undefined) ?? ''}`)
+        .digest('hex')
+        .slice(0, 16);
     const redisKey = `idem:${userId}:${req.method}:${req.url}:${idempotencyKey}`;
 
     return from(this.valkey.instance.get(redisKey)).pipe(

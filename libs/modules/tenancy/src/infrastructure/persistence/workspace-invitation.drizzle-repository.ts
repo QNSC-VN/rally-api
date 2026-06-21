@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt } from 'drizzle-orm';
 import { InjectDrizzle } from '@platform';
 import type { DrizzleDB } from '@platform';
 import { workspaceInvitations } from '../../../../../../db/schema/tenancy';
@@ -40,6 +40,7 @@ export class WorkspaceInvitationDrizzleRepository implements IWorkspaceInvitatio
           eq(workspaceInvitations.workspaceId, workspaceId),
           eq(workspaceInvitations.email, email),
           eq(workspaceInvitations.status, 'pending'),
+          gt(workspaceInvitations.expiresAt, new Date()),
         ),
       )
       .limit(1);

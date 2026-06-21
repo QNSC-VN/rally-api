@@ -20,9 +20,15 @@ export const EnvSchema = z.object({
   REDIS_URL: z.string().default('redis://localhost:6379'),
   REDIS_KEY_PREFIX: z.string().default('rally:'),
 
-  // JWT
-  JWT_PRIVATE_KEY: z.string().min(1),
-  JWT_PUBLIC_KEY: z.string().min(1),
+  // JWT — keys must be valid PEM blocks
+  JWT_PRIVATE_KEY: z
+    .string()
+    .min(1)
+    .refine((v) => v.includes('-----BEGIN'), 'JWT_PRIVATE_KEY must be a PEM-encoded private key'),
+  JWT_PUBLIC_KEY: z
+    .string()
+    .min(1)
+    .refine((v) => v.includes('-----BEGIN'), 'JWT_PUBLIC_KEY must be a PEM-encoded public key'),
   JWT_ACCESS_EXPIRY: z.string().default('15m'),
   JWT_REFRESH_EXPIRY: z.string().default('30d'),
   JWT_ISSUER: z.string().default('rally-api'),
@@ -44,8 +50,8 @@ export const EnvSchema = z.object({
   // Observability
   OTEL_ENABLED: z
     .string()
-    .transform((v) => v === 'true')
-    .default(false),
+    .default('false')
+    .transform((v) => v === 'true'),
   OTEL_SERVICE_NAME: z.string().default('rally-api'),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().default('http://localhost:4318'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
@@ -53,8 +59,17 @@ export const EnvSchema = z.object({
   // Resilience
   RESILIENCE_ENABLED: z
     .string()
-    .transform((v) => v === 'true')
-    .default(true),
+    .default('true')
+    .transform((v) => v === 'true'),
+
+  // Rate limiting (per-user sliding window)
+  RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
+  RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
+
+  // TTL knobs — defaults match SRS but allow ops to tune without code change
+  PASSWORD_RESET_TOKEN_TTL_HOURS: z.coerce.number().int().positive().default(1),
+  INVITATION_TTL_DAYS: z.coerce.number().int().positive().default(7),
+  SESSION_CLEANUP_OLDER_THAN_DAYS: z.coerce.number().int().positive().default(7),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

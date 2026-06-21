@@ -10,8 +10,8 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors, Public, buildPageArgs, PageQueryDto } from '@platform';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Auth, ApiCommonErrors, buildPageArgs, PageQueryDto } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { TenancyService } from '../../application/tenancy.service';
@@ -354,7 +354,9 @@ export class WorkspaceController {
   }
 }
 
-// ── Public invitation accept ──────────────────────────────────────────────────
+// ── Authenticated invitation accept ──────────────────────────────────────────
+// Accepting an invitation requires the recipient to be authenticated first.
+// The frontend flow: receive email → log in / register → POST /invitations/accept.
 
 @ApiTags('invitations')
 @Controller('invitations')
@@ -362,10 +364,10 @@ export class InvitationController {
   constructor(private readonly tenancyService: TenancyService) {}
 
   @Post('accept')
-  @Public()
   @HttpCode(204)
-  @ApiOperation({ summary: 'Accept a workspace invitation using the token from email' })
-  @ApiCommonErrors(400, 404, 422)
+  @ApiOperation({ summary: 'Accept a workspace invitation (authenticated user only)' })
+  @ApiBearerAuth('access-token')
+  @ApiCommonErrors(400, 401, 404, 422)
   async acceptInvitation(
     @Body() dto: AcceptInvitationDto,
     @CurrentUser() user: JwtPayload,

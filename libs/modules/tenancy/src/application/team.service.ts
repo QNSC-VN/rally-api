@@ -6,6 +6,7 @@ import {
   ITeamMemberRepository,
   TEAM_MEMBER_REPOSITORY,
 } from '../domain/ports/team-member.repository';
+import { IWorkspaceRepository, WORKSPACE_REPOSITORY } from '../domain/ports/workspace.repository';
 import type { Team, TeamMember, UpdateTeamInput } from '../domain/team.types';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class TeamService {
   constructor(
     @Inject(TEAM_REPOSITORY) private readonly teamRepo: ITeamRepository,
     @Inject(TEAM_MEMBER_REPOSITORY) private readonly teamMemberRepo: ITeamMemberRepository,
+    @Inject(WORKSPACE_REPOSITORY) private readonly workspaceRepo: IWorkspaceRepository,
   ) {}
 
   async listTeams(workspaceId: string): Promise<Team[]> {
@@ -29,6 +31,11 @@ export class TeamService {
     description?: string,
     leadId?: string,
   ): Promise<Team> {
+    const workspace = await this.workspaceRepo.findById(workspaceId);
+    if (!workspace) {
+      throw new NotFoundException('WORKSPACE_NOT_FOUND', 'Workspace not found');
+    }
+
     const existing = await this.teamRepo.findByKey(workspaceId, key.toUpperCase());
     if (existing) {
       throw new ConflictException(

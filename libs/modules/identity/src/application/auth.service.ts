@@ -70,7 +70,8 @@ export class AuthService {
       throw new UnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password');
     }
 
-    const { accessToken, jti, expiresIn } = this.signAccessToken(user);
+    const sessionId = uuidv7();
+    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId);
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
 
     const refreshExpiry = new Date();
@@ -78,7 +79,7 @@ export class AuthService {
 
     await Promise.all([
       this.sessionRepo.create({
-        id: uuidv7(),
+        id: sessionId,
         tenantId: user.tenantId,
         userId: user.id,
         tokenHash,
@@ -89,7 +90,7 @@ export class AuthService {
       this.userRepo.updateLastLogin(user.id),
     ]);
 
-    this.logger.log({ userId: user.id, jti }, 'User logged in');
+    this.logger.log({ userId: user.id, jti, sessionId }, 'User logged in');
 
     return {
       accessToken,
@@ -138,7 +139,8 @@ export class AuthService {
     }
 
     // Revoke old session and issue new tokens (rotation)
-    const { accessToken, expiresIn } = this.signAccessToken(user);
+    const newSessionId = uuidv7();
+    const { accessToken, expiresIn } = this.signAccessToken(user, newSessionId);
     const { refreshToken: newRefreshToken, tokenHash: newHash } = this.generateRefreshToken();
 
     const refreshExpiry = new Date();
@@ -147,7 +149,7 @@ export class AuthService {
     await Promise.all([
       this.sessionRepo.revokeById(session.id),
       this.sessionRepo.create({
-        id: uuidv7(),
+        id: newSessionId,
         tenantId: user.tenantId,
         userId: user.id,
         tokenHash: newHash,
@@ -240,14 +242,17 @@ export class AuthService {
   // Private helpers
   // ---------------------------------------------------------------------------
 
-  private signAccessToken(user: User): { accessToken: string; jti: string; expiresIn: number } {
+  private signAccessToken(
+    user: User,
+    sessionId: string,
+  ): { accessToken: string; jti: string; expiresIn: number } {
     const jti = uuidv7();
     const expiresIn = 15 * 60; // 15 minutes in seconds
 
     const payload: Omit<JwtPayload, 'iat' | 'exp' | 'iss' | 'aud'> = {
       sub: user.id,
       tenantId: user.tenantId,
-      sessionId: user.id, // will be updated with actual sessionId if needed
+      sessionId,
       jti,
     };
 
@@ -313,7 +318,8 @@ export class AuthService {
 
     const rawToken = randomBytes(32).toString('base64url');
     const tokenHash = this.hashToken(rawToken);
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const ttlHours = this.config.get('PASSWORD_RESET_TOKEN_TTL_HOURS');
+    const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
 
     await this.userRepo.createPasswordResetToken(user.id, tokenHash, expiresAt);
 

@@ -9,6 +9,7 @@ import { OutboxRelayService } from './outbox/outbox-relay.service';
 import { AuditConsumer } from './consumers/audit.consumer';
 import { NotificationsConsumer } from './consumers/notifications.consumer';
 import { SnapshotCronService } from './cron/snapshot.cron';
+import { CleanupCronService } from './cron/cleanup.cron';
 
 /**
  * Worker process module.
@@ -39,6 +40,7 @@ import { SnapshotCronService } from './cron/snapshot.cron';
     NotificationsConsumer,
     // Scheduled cron jobs
     SnapshotCronService,
+    CleanupCronService,
   ],
 })
 export class WorkerModule {}

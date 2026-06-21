@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
 import { InjectDrizzle } from '@platform';
 import type { DrizzleDB } from '@platform';
@@ -82,7 +82,12 @@ export class UserDrizzleRepository implements IUserRepository {
         expiresAt: passwordResetTokens.expiresAt,
       })
       .from(passwordResetTokens)
-      .where(eq(passwordResetTokens.tokenHash, tokenHash))
+      .where(
+        and(
+          eq(passwordResetTokens.tokenHash, tokenHash),
+          gt(passwordResetTokens.expiresAt, new Date()),
+        ),
+      )
       .limit(1);
     return rows[0] ?? null;
   }

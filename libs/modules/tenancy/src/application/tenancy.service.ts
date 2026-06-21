@@ -6,6 +6,7 @@ import {
   ConflictException,
   UnauthorizedException,
   PreconditionFailedException,
+  AppConfigService,
 } from '@platform';
 import type { JwtPayload, CursorPayload, PagedResult } from '@platform';
 import { ITenantRepository, TENANT_REPOSITORY } from '../domain/ports/tenant.repository';
@@ -45,6 +46,7 @@ export class TenancyService {
     private readonly invitationRepo: IWorkspaceInvitationRepository,
     @Inject(WORKSPACE_SETTINGS_REPOSITORY)
     private readonly settingsRepo: IWorkspaceSettingsRepository,
+    private readonly config: AppConfigService,
   ) {}
 
   // ── Tenant ──────────────────────────────────────────────────────────────────
@@ -239,7 +241,8 @@ export class TenancyService {
 
     const rawToken = randomBytes(32).toString('base64url');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const invitationTtlDays = this.config.get('INVITATION_TTL_DAYS');
+    const expiresAt = new Date(Date.now() + invitationTtlDays * 24 * 60 * 60 * 1000);
 
     const invitation = await this.invitationRepo.create({
       id: uuidv7(),

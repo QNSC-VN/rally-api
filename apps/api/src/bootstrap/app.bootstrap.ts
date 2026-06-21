@@ -29,10 +29,19 @@ export async function bootstrapApp(app: NestFastifyApplication): Promise<void> {
 
   // CORS
   app.enableCors({
-    origin: config.get('CORS_ORIGINS').split(',').map((o) => o.trim()),
+    origin: config
+      .get('CORS_ORIGINS')
+      .split(',')
+      .map((o) => o.trim()),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Correlation-Id', 'X-CSRF-Token'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Correlation-Id',
+      'X-CSRF-Token',
+      'Idempotency-Key',
+    ],
     exposedHeaders: ['X-Correlation-Id', 'RateLimit-Limit', 'RateLimit-Remaining', 'Retry-After'],
   });
 
