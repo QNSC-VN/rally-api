@@ -106,6 +106,7 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.19.4",
     "typescript": "^6.0.3",
+    "unplugin-swc": "^1.5.9",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.9"
   }
