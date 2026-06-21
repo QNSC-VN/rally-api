@@ -37,3 +37,25 @@ export const ProjectQuerySchema = PageQuerySchema.extend({
 });
 
 export class ProjectQueryDto extends createZodDto(ProjectQuerySchema) {}
+
+// ── Labels ───────────────────────────────────────────────────────────────────
+
+export const CreateLabelSchema = z.object({
+  name: z.string().min(1).max(100).trim(),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'Color must be a hex code like #3b82f6')
+    .optional(),
+});
+
+export class CreateLabelDto extends createZodDto(CreateLabelSchema) {}
+
+export const UpdateLabelSchema = z.object({
+  name: z.string().min(1).max(100).trim().optional(),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'Color must be a hex code like #3b82f6')
+    .optional(),
+});
+
+export class UpdateLabelDto extends createZodDto(UpdateLabelSchema) {}

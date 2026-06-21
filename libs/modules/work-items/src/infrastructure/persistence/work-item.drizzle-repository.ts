@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, isNull, lt } from 'drizzle-orm';
 import { InjectDrizzle, buildPageResult } from '@platform';
 import type { DrizzleDB, CursorPayload, PagedResult } from '@platform';
-import { workItems } from '../../../../../../db/schema/work';
+import { workItems, workItemLabels, labels } from '../../../../../../db/schema/work';
 import type {
   WorkItem,
   CreateWorkItemInput,
@@ -114,5 +114,37 @@ export class WorkItemDrizzleRepository implements IWorkItemRepository {
       .update(workItems)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
       .where(eq(workItems.id, id));
+  }
+
+  async reorderItems(items: Array<{ id: string; rank: string }>): Promise<void> {
+    if (items.length === 0) return;
+    // Execute each rank update; SQLite-style batch not available; use Promise.all for PG
+    await Promise.all(
+      items.map(({ id, rank }) =>
+        this.db.update(workItems).set({ rank, updatedAt: new Date() }).where(eq(workItems.id, id)),
+      ),
+    );
+  }
+
+  async addLabel(workItemId: string, labelId: string): Promise<void> {
+    await this.db.insert(workItemLabels).values({ workItemId, labelId }).onConflictDoNothing();
+  }
+
+  async removeLabel(workItemId: string, labelId: string): Promise<void> {
+    await this.db
+      .delete(workItemLabels)
+      .where(and(eq(workItemLabels.workItemId, workItemId), eq(workItemLabels.labelId, labelId)));
+  }
+
+  async listLabels(
+    workItemId: string,
+  ): Promise<Array<{ id: string; name: string; color: string }>> {
+    const rows = await this.db
+      .select({ id: labels.id, name: labels.name, color: labels.color })
+      .from(workItemLabels)
+      .innerJoin(labels, eq(workItemLabels.labelId, labels.id))
+      .where(eq(workItemLabels.workItemId, workItemId))
+      .orderBy(labels.name);
+    return rows;
   }
 }

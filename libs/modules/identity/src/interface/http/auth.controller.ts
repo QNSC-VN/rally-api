@@ -1,11 +1,11 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Patch, Post, Req, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import '@fastify/cookie';
 import { Auth, ApiCommonErrors, Public, UnauthorizedException } from '@platform';
 import type { JwtPayload } from '@platform';
 import { AuthService } from '../../application/auth.service';
-import { LoginDto } from './dto/login.dto';
+import { LoginDto, ChangePasswordDto, UpdateProfileDto } from './dto/login.dto';
 import { AuthTokenResponseDto, UserProfileResponseDto } from './dto/auth-response.dto';
 import { CurrentUser } from './decorators/current-user.decorator';
 
@@ -110,5 +110,43 @@ export class AuthController {
       createdAt: profile.createdAt.toISOString(),
       updatedAt: profile.updatedAt.toISOString(),
     };
+  }
+
+  // ── PATCH /auth/me ─────────────────────────────────────────────────────────
+
+  @Patch('me')
+  @Auth()
+  @ApiOperation({ summary: 'Update authenticated user profile' })
+  @ApiCommonErrors(400, 401, 422)
+  async updateProfile(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpdateProfileDto,
+  ): Promise<UserProfileResponseDto> {
+    const profile = await this.authService.updateProfile(user.sub, dto);
+    return {
+      id: profile.id,
+      email: profile.email,
+      displayName: profile.displayName,
+      avatarUrl: profile.avatarUrl,
+      locale: profile.locale,
+      timezone: profile.timezone,
+      emailVerified: profile.emailVerified,
+      createdAt: profile.createdAt.toISOString(),
+      updatedAt: profile.updatedAt.toISOString(),
+    };
+  }
+
+  // ── PATCH /auth/password ───────────────────────────────────────────────────
+
+  @Patch('password')
+  @Auth()
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Change authenticated user password' })
+  @ApiCommonErrors(400, 401, 422)
+  async changePassword(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<void> {
+    await this.authService.changePassword(user.sub, dto.currentPassword, dto.newPassword);
   }
 }

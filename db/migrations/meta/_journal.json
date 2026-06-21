@@ -15,6 +15,13 @@
       "when": 1781975363255,
       "tag": "0001_strange_the_santerians",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782023311030,
+      "tag": "0002_smooth_leader",
+      "breakpoints": true
     }
   ]
 }

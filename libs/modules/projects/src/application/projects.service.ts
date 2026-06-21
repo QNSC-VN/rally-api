@@ -7,6 +7,7 @@ import {
   IWorkflowStatusRepository,
   WORKFLOW_STATUS_REPOSITORY,
 } from '../domain/ports/workflow-status.repository';
+import { ILabelRepository, LABEL_REPOSITORY } from '../domain/ports/label.repository';
 import type {
   Project,
   WorkflowStatus,
@@ -15,6 +16,7 @@ import type {
   CreateWorkflowStatusInput,
   CreateWorkflowTransitionInput,
 } from '../domain/project.types';
+import type { Label } from '../domain/label.types';
 
 /** Default workflow statuses seeded for every new project (mirrors Rally defaults). */
 const DEFAULT_STATUSES: Array<{
@@ -37,6 +39,7 @@ export class ProjectsService {
   constructor(
     @Inject(PROJECT_REPOSITORY) private readonly projectRepo: IProjectRepository,
     @Inject(WORKFLOW_STATUS_REPOSITORY) private readonly statusRepo: IWorkflowStatusRepository,
+    @Inject(LABEL_REPOSITORY) private readonly labelRepo: ILabelRepository,
   ) {}
 
   // ── Projects ──────────────────────────────────────────────────────────────
@@ -216,5 +219,46 @@ export class ProjectsService {
       throw new NotFoundException('WORKFLOW_STATUS_NOT_FOUND', 'Workflow transition not found');
     }
     await this.statusRepo.deleteTransition(transitionId);
+  }
+
+  // ── Labels ────────────────────────────────────────────────────────────────
+
+  async listLabels(tenantId: string, projectId: string): Promise<Label[]> {
+    await this.getProject(tenantId, projectId);
+    return this.labelRepo.listByProject(projectId, tenantId);
+  }
+
+  async createLabel(
+    tenantId: string,
+    projectId: string,
+    name: string,
+    color?: string,
+  ): Promise<Label> {
+    await this.getProject(tenantId, projectId);
+    return this.labelRepo.create({ id: uuidv7(), tenantId, projectId, name, color });
+  }
+
+  async updateLabel(
+    tenantId: string,
+    projectId: string,
+    labelId: string,
+    input: { name?: string; color?: string },
+  ): Promise<Label> {
+    await this.getProject(tenantId, projectId);
+    const label = await this.labelRepo.findById(labelId);
+    if (!label || label.projectId !== projectId || label.tenantId !== tenantId) {
+      throw new NotFoundException('LABEL_NOT_FOUND', 'Label not found');
+    }
+    return this.labelRepo.update(labelId, input);
+  }
+
+  async deleteLabel(tenantId: string, projectId: string, labelId: string): Promise<void> {
+    await this.getProject(tenantId, projectId);
+    const label = await this.labelRepo.findById(labelId);
+    if (!label || label.projectId !== projectId || label.tenantId !== tenantId) {
+      throw new NotFoundException('LABEL_NOT_FOUND', 'Label not found');
+    }
+    await this.labelRepo.delete(labelId);
+    this.logger.log({ labelId, projectId }, 'Label deleted');
   }
 }

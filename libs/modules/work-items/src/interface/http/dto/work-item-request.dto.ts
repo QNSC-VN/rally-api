@@ -64,3 +64,22 @@ export const MoveWorkItemSchema = z.object({
 });
 
 export class MoveWorkItemDto extends createZodDto(MoveWorkItemSchema) {}
+
+// ── Reorder (backlog rank) ────────────────────────────────────────────────────
+
+export const ReorderWorkItemsSchema = z.object({
+  items: z
+    .array(z.object({ id: z.string().uuid(), rank: z.string().min(1).max(255) }))
+    .min(1)
+    .max(500),
+});
+
+export class ReorderWorkItemsDto extends createZodDto(ReorderWorkItemsSchema) {}
+
+// ── Add label ─────────────────────────────────────────────────────────────────
+
+export const AddLabelSchema = z.object({
+  labelId: z.string().uuid(),
+});
+
+export class AddLabelDto extends createZodDto(AddLabelSchema) {}

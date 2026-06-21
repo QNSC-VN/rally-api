@@ -1,8 +1,15 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
-import { NotFoundException, ConflictException, PreconditionFailedException } from '@platform';
-import type { JwtPayload, CursorPayload, PagedResult } from '@platform';
+import { and, eq, isNull, ne } from 'drizzle-orm';
+import {
+  NotFoundException,
+  ConflictException,
+  PreconditionFailedException,
+  InjectDrizzle,
+} from '@platform';
+import type { JwtPayload, CursorPayload, PagedResult, DrizzleDB } from '@platform';
 import { ProjectsService } from '@modules/projects';
+import { workItems, workflowStatuses } from '../../../../../db/schema/work';
 import { ISprintRepository, SPRINT_REPOSITORY } from '../domain/ports/sprint.repository';
 import type { Sprint, UpdateSprintInput } from '../domain/sprint.types';
 
@@ -12,6 +19,7 @@ export class PlanningService {
 
   constructor(
     @Inject(SPRINT_REPOSITORY) private readonly sprintRepo: ISprintRepository,
+    @InjectDrizzle() private readonly db: DrizzleDB,
     private readonly projectsService: ProjectsService,
   ) {}
 
@@ -108,7 +116,11 @@ export class PlanningService {
 
   // ── Complete ──────────────────────────────────────────────────────────────
 
-  async completeSprint(tenantId: string, id: string): Promise<Sprint> {
+  async completeSprint(
+    tenantId: string,
+    id: string,
+    opts: { moveToSprintId?: string } = {},
+  ): Promise<Sprint> {
     const sprint = await this.getSprint(tenantId, id);
 
     if (sprint.status !== 'active') {
@@ -118,11 +130,63 @@ export class PlanningService {
       );
     }
 
+    // Validate target sprint exists and belongs to same project
+    if (opts.moveToSprintId) {
+      const target = await this.getSprint(tenantId, opts.moveToSprintId);
+      if (target.projectId !== sprint.projectId) {
+        throw new PreconditionFailedException(
+          'SPRINT_PROJECT_MISMATCH',
+          'Target sprint must belong to the same project',
+        );
+      }
+    }
+
+    // Find 'done' category status IDs for this project
+    const doneStatuses = await this.db
+      .select({ id: workflowStatuses.id })
+      .from(workflowStatuses)
+      .where(
+        and(
+          eq(workflowStatuses.projectId, sprint.projectId),
+          eq(workflowStatuses.category, 'done'),
+        ),
+      );
+    const doneStatusIds = doneStatuses.map((s) => s.id);
+
+    // Move unfinished items to target sprint or backlog
+    if (doneStatusIds.length > 0) {
+      const whereConditions = [
+        eq(workItems.iterationId, id),
+        eq(workItems.tenantId, tenantId),
+        isNull(workItems.deletedAt),
+      ];
+      // Only move items NOT in done statuses
+      if (doneStatusIds.length > 0) {
+        whereConditions.push(
+          // not in done statuses
+          ...(doneStatusIds.length === 1
+            ? [ne(workItems.statusId, doneStatusIds[0]!)]
+            : [and(...doneStatusIds.map((sid) => ne(workItems.statusId, sid)))!]),
+        );
+      }
+
+      await this.db
+        .update(workItems)
+        .set({
+          iterationId: opts.moveToSprintId ?? null,
+          updatedAt: new Date(),
+        })
+        .where(and(...whereConditions));
+    }
+
     const updated = await this.sprintRepo.update(id, {
       status: 'completed',
       completedAt: new Date(),
     });
-    this.logger.log({ sprintId: id }, 'Sprint completed');
+    this.logger.log(
+      { sprintId: id, moveToSprintId: opts.moveToSprintId ?? null },
+      'Sprint completed',
+    );
     return updated;
   }
 }

@@ -150,4 +150,39 @@ export class WorkItemsService {
     await this.projectsService.assertTransitionAllowed(item.projectId, item.statusId, toStatusId);
     return this.workItemRepo.update(item.id, { statusId: toStatusId });
   }
+
+  // ── Reorder (backlog drag-and-drop) ───────────────────────────────────────
+
+  async reorderWorkItems(
+    tenantId: string,
+    items: Array<{ id: string; rank: string }>,
+  ): Promise<void> {
+    if (items.length === 0) return;
+    // Validate all items belong to this tenant before updating
+    const existing = await Promise.all(items.map(({ id }) => this.getWorkItem(tenantId, id)));
+    if (existing.some((w) => w.tenantId !== tenantId)) {
+      throw new Error('Tenant mismatch');
+    }
+    await this.workItemRepo.reorderItems(items);
+  }
+
+  // ── Labels ────────────────────────────────────────────────────────────────
+
+  async getWorkItemLabels(
+    tenantId: string,
+    id: string,
+  ): Promise<Array<{ id: string; name: string; color: string }>> {
+    await this.getWorkItem(tenantId, id);
+    return this.workItemRepo.listLabels(id);
+  }
+
+  async addLabelToWorkItem(tenantId: string, id: string, labelId: string): Promise<void> {
+    await this.getWorkItem(tenantId, id);
+    await this.workItemRepo.addLabel(id, labelId);
+  }
+
+  async removeLabelFromWorkItem(tenantId: string, id: string, labelId: string): Promise<void> {
+    await this.getWorkItem(tenantId, id);
+    await this.workItemRepo.removeLabel(id, labelId);
+  }
 }

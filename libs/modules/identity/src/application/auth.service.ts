@@ -187,6 +187,52 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------------------------
+  // Change password
+  // ---------------------------------------------------------------------------
+
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.userRepo.findById(userId);
+    if (!user || user.deletedAt) {
+      throw new NotFoundException('USER_NOT_FOUND', 'User not found');
+    }
+
+    if (!user.passwordHash) {
+      throw new UnauthorizedException(
+        'AUTH_INVALID_CREDENTIALS',
+        'No password set for this account',
+      );
+    }
+
+    const valid = await argon2.verify(user.passwordHash, currentPassword);
+    if (!valid) {
+      throw new UnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Current password is incorrect');
+    }
+
+    const newHash = await AuthService.hashPassword(newPassword);
+    await this.userRepo.updatePasswordHash(userId, newHash);
+    this.logger.log({ userId }, 'Password changed');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Update profile
+  // ---------------------------------------------------------------------------
+
+  async updateProfile(
+    userId: string,
+    input: { displayName?: string; avatarUrl?: string | null; locale?: string; timezone?: string },
+  ): Promise<User> {
+    const user = await this.userRepo.findById(userId);
+    if (!user || user.deletedAt) {
+      throw new NotFoundException('USER_NOT_FOUND', 'User not found');
+    }
+    return this.userRepo.updateProfile(userId, input);
+  }
+
+  // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
 

@@ -20,6 +20,8 @@ import {
   CreateWorkItemDto,
   UpdateWorkItemDto,
   MoveWorkItemDto,
+  ReorderWorkItemsDto,
+  AddLabelDto,
 } from './dto/work-item-request.dto';
 import type { WorkItemResponseDto } from './dto/work-item-response.dto';
 import type { WorkItem } from '../../domain/work-item.types';
@@ -171,5 +173,58 @@ export class WorkItemsController {
   ): Promise<WorkItemResponseDto> {
     const item = await this.workItemsService.moveWorkItem(user.tenantId, id, dto.toStatusId);
     return toWorkItemDto(item);
+  }
+
+  // ── Reorder (backlog drag-and-drop) ───────────────────────────────────────
+
+  @Patch('reorder')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Bulk update work item ranks for backlog reordering' })
+  @ApiCommonErrors(400, 401, 404, 422)
+  async reorderWorkItems(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: ReorderWorkItemsDto,
+  ): Promise<void> {
+    await this.workItemsService.reorderWorkItems(user.tenantId, dto.items);
+  }
+
+  // ── Labels ────────────────────────────────────────────────────────────────
+
+  @Get(':id/labels')
+  @ApiOperation({ summary: 'List labels on a work item' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(401, 404)
+  async listWorkItemLabels(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<Array<{ id: string; name: string; color: string }>> {
+    return this.workItemsService.getWorkItemLabels(user.tenantId, id);
+  }
+
+  @Post(':id/labels')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Add a label to a work item' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(400, 401, 404, 422)
+  async addLabel(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AddLabelDto,
+  ): Promise<void> {
+    await this.workItemsService.addLabelToWorkItem(user.tenantId, id, dto.labelId);
+  }
+
+  @Delete(':id/labels/:labelId')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Remove a label from a work item' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'labelId', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(401, 404)
+  async removeLabel(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('labelId', ParseUUIDPipe) labelId: string,
+  ): Promise<void> {
+    await this.workItemsService.removeLabelFromWorkItem(user.tenantId, id, labelId);
   }
 }

@@ -17,6 +17,7 @@ import {
   bigint,
   index,
   uniqueIndex,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -260,5 +261,41 @@ export const attachments = workSchema.table(
   (t) => ({
     tenantIdx: index('ix_attach_tenant').on(t.tenantId),
     workItemIdx: index('ix_attach_work_item').on(t.workItemId),
+  }),
+);
+
+// ── labels ────────────────────────────────────────────────────────────────
+
+export const labels = workSchema.table(
+  'labels',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    name: varchar('name', { length: 100 }).notNull(),
+    color: varchar('color', { length: 20 }).notNull().default('#6b7280'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tenantIdx: index('ix_labels_tenant').on(t.tenantId),
+    projectIdx: index('ix_labels_project').on(t.projectId),
+    uniqueName: uniqueIndex('uq_labels_name').on(t.projectId, t.name),
+  }),
+);
+
+// ── work_item_labels (join table) ─────────────────────────────────────────
+
+export const workItemLabels = workSchema.table(
+  'work_item_labels',
+  {
+    workItemId: uuid('work_item_id').notNull(),
+    labelId: uuid('label_id').notNull(),
+    addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.workItemId, t.labelId] }),
+    workItemIdx: index('ix_wil_work_item').on(t.workItemId),
+    labelIdx: index('ix_wil_label').on(t.labelId),
   }),
 );

@@ -36,3 +36,14 @@ export interface WorkflowTransitionResponseDto {
   name: string | null;
   requiredRole: string | null;
 }
+
+// ── Label response ────────────────────────────────────────────────────────────
+
+export interface LabelResponseDto {
+  id: string;
+  projectId: string;
+  name: string;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+}

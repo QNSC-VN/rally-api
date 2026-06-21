@@ -15,13 +15,21 @@ import { Auth, ApiCommonErrors, buildPageArgs } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { ProjectsService } from '../../application/projects.service';
-import { CreateProjectDto, UpdateProjectDto, ProjectQueryDto } from './dto/project-request.dto';
+import {
+  CreateProjectDto,
+  UpdateProjectDto,
+  ProjectQueryDto,
+  CreateLabelDto,
+  UpdateLabelDto,
+} from './dto/project-request.dto';
 import type {
   ProjectResponseDto,
   WorkflowStatusResponseDto,
   WorkflowTransitionResponseDto,
+  LabelResponseDto,
 } from './dto/project-response.dto';
 import type { Project, WorkflowStatus, WorkflowTransition } from '../../domain/project.types';
+import type { Label } from '../../domain/label.types';
 
 // ── Mappers ──────────────────────────────────────────────────────────────────
 
@@ -61,6 +69,17 @@ function toTransitionDto(t: WorkflowTransition): WorkflowTransitionResponseDto {
     toStatusId: t.toStatusId,
     name: t.name,
     requiredRole: t.requiredRole,
+  };
+}
+
+function toLabelDto(l: Label): LabelResponseDto {
+  return {
+    id: l.id,
+    projectId: l.projectId,
+    name: l.name,
+    color: l.color,
+    createdAt: l.createdAt.toISOString(),
+    updatedAt: l.updatedAt.toISOString(),
   };
 }
 
@@ -175,5 +194,60 @@ export class ProjectsController {
   ): Promise<WorkflowTransitionResponseDto[]> {
     const transitions = await this.projectsService.listTransitions(user.tenantId, id);
     return transitions.map(toTransitionDto);
+  }
+  // ── Labels ──────────────────────────────────────────────────────────────
+
+  @Get(':id/labels')
+  @ApiOperation({ summary: 'List labels for a project' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(401, 404)
+  async listLabels(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<LabelResponseDto[]> {
+    const labelList = await this.projectsService.listLabels(user.tenantId, id);
+    return labelList.map(toLabelDto);
+  }
+
+  @Post(':id/labels')
+  @ApiOperation({ summary: 'Create a label for a project' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(400, 401, 404, 409, 422)
+  async createLabel(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateLabelDto,
+  ): Promise<LabelResponseDto> {
+    const label = await this.projectsService.createLabel(user.tenantId, id, dto.name, dto.color);
+    return toLabelDto(label);
+  }
+
+  @Patch(':id/labels/:labelId')
+  @ApiOperation({ summary: 'Update a label' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'labelId', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(400, 401, 404, 422)
+  async updateLabel(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('labelId', ParseUUIDPipe) labelId: string,
+    @Body() dto: UpdateLabelDto,
+  ): Promise<LabelResponseDto> {
+    const label = await this.projectsService.updateLabel(user.tenantId, id, labelId, dto);
+    return toLabelDto(label);
+  }
+
+  @Delete(':id/labels/:labelId')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Delete a label' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'labelId', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(401, 404)
+  async deleteLabel(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('labelId', ParseUUIDPipe) labelId: string,
+  ): Promise<void> {
+    await this.projectsService.deleteLabel(user.tenantId, id, labelId);
   }
 }

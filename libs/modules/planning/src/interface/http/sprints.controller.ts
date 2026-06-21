@@ -15,7 +15,12 @@ import { Auth, ApiCommonErrors, buildPageArgs } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { PlanningService } from '../../application/planning.service';
-import { SprintQueryDto, CreateSprintDto, UpdateSprintDto } from './dto/sprint-request.dto';
+import {
+  SprintQueryDto,
+  CreateSprintDto,
+  UpdateSprintDto,
+  CompleteSprintDto,
+} from './dto/sprint-request.dto';
 import type { SprintResponseDto } from './dto/sprint-response.dto';
 import type { Sprint } from '../../domain/sprint.types';
 
@@ -122,14 +127,17 @@ export class SprintsController {
   }
 
   @Post(':id/complete')
-  @ApiOperation({ summary: 'Complete a sprint (active → completed)' })
+  @ApiOperation({ summary: 'Complete a sprint (active → completed); moves unfinished items' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiCommonErrors(400, 401, 404)
   async completeSprint(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CompleteSprintDto,
   ): Promise<SprintResponseDto> {
-    const sprint = await this.planningService.completeSprint(user.tenantId, id);
+    const sprint = await this.planningService.completeSprint(user.tenantId, id, {
+      moveToSprintId: dto.moveToSprintId,
+    });
     return toSprintDto(sprint);
   }
 }

@@ -31,4 +31,29 @@ export class UserDrizzleRepository implements IUserRepository {
   async updateLastLogin(id: string): Promise<void> {
     await this.db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, id));
   }
+
+  async updatePasswordHash(id: string, passwordHash: string): Promise<void> {
+    await this.db
+      .update(users)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(eq(users.id, id));
+  }
+
+  async updateProfile(
+    id: string,
+    input: { displayName?: string; avatarUrl?: string | null; locale?: string; timezone?: string },
+  ): Promise<User> {
+    const rows = await this.db
+      .update(users)
+      .set({
+        ...(input.displayName !== undefined && { displayName: input.displayName }),
+        ...(input.avatarUrl !== undefined && { avatarUrl: input.avatarUrl }),
+        ...(input.locale !== undefined && { locale: input.locale }),
+        ...(input.timezone !== undefined && { timezone: input.timezone }),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, id))
+      .returning();
+    return rows[0] as User;
+  }
 }

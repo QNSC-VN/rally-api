@@ -19,4 +19,8 @@ export interface IWorkItemRepository {
   create(input: CreateWorkItemInput): Promise<WorkItem>;
   update(id: string, input: UpdateWorkItemInput): Promise<WorkItem>;
   softDelete(id: string): Promise<void>;
+  reorderItems(items: Array<{ id: string; rank: string }>): Promise<void>;
+  addLabel(workItemId: string, labelId: string): Promise<void>;
+  removeLabel(workItemId: string, labelId: string): Promise<void>;
+  listLabels(workItemId: string): Promise<Array<{ id: string; name: string; color: string }>>;
 }

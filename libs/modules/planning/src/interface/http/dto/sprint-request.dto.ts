@@ -34,3 +34,15 @@ export const UpdateSprintSchema = z.object({
 });
 
 export class UpdateSprintDto extends createZodDto(UpdateSprintSchema) {}
+
+// ── Complete sprint ───────────────────────────────────────────────────────────
+
+export const CompleteSprintSchema = z.object({
+  /**
+   * Optional target sprint for unfinished items.
+   * If omitted, unfinished items are moved to the backlog (iterationId = null).
+   */
+  moveToSprintId: z.string().uuid().optional(),
+});
+
+export class CompleteSprintDto extends createZodDto(CompleteSprintSchema) {}
