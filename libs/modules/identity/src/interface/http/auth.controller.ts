@@ -20,7 +20,7 @@ const REFRESH_COOKIE = 'refresh_token';
 const COOKIE_BASE = {
   httpOnly: true,
   sameSite: 'strict',
-  path: '/auth/refresh',
+  path: '/v1/auth/refresh',
 } as const;
 
 @ApiTags('auth')
