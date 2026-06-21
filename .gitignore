@@ -13,15 +13,16 @@ db/**/*.js
 db/**/*.js.map
 
 # Environment — NEVER commit secrets
-.env
-.env.local
-.env.*.local
+# Catch all .env variants; .env.example is the only safe-to-commit file.
+.env*
+!.env.example
 
 # Drizzle — migration SQL files ARE committed (version-controlled DDL)
 
 # Logs
 *.log
 logs/
+.agent-logs/
 
 # OS / Editor
 .DS_Store
@@ -33,5 +34,9 @@ Thumbs.db
 coverage/
 .nyc_output/
 
-# TypeScript
+# Test output
+junit.xml
+
+# TypeScript / build caches
 *.tsbuildinfo
+.swc/
