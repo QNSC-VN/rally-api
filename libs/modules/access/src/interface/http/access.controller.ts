@@ -8,13 +8,13 @@ import {
   ParseUUIDPipe,
   Post,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Auth, ApiCommonErrors } from '@platform';
 import type { JwtPayload } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { AccessService } from '../../application/access.service';
 import { AssignRoleDto } from './dto/access-request.dto';
-import type { RoleResponseDto, RoleAssignmentResponseDto } from './dto/access-response.dto';
+import { RoleResponseDto, RoleAssignmentResponseDto } from './dto/access-response.dto';
 import type { SystemRole, UserRoleAssignment } from '../../domain/access.types';
 
 function toRoleDto(r: SystemRole): RoleResponseDto {
@@ -53,6 +53,7 @@ export class AccessController {
 
   @Get('roles')
   @ApiOperation({ summary: 'List all roles available to the tenant' })
+  @ApiResponse({ status: 200, type: [RoleResponseDto] })
   @ApiCommonErrors(401)
   async listRoles(@CurrentUser() user: JwtPayload): Promise<RoleResponseDto[]> {
     const roles = await this.accessService.listRoles(user.tenantId);
@@ -64,6 +65,7 @@ export class AccessController {
   @Get('users/:userId/role-assignments')
   @ApiOperation({ summary: "Get a user's role assignments" })
   @ApiParam({ name: 'userId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: [RoleAssignmentResponseDto] })
   @ApiCommonErrors(401, 404)
   async getUserAssignments(
     @CurrentUser() user: JwtPayload,
@@ -75,6 +77,7 @@ export class AccessController {
 
   @Post('role-assignments')
   @ApiOperation({ summary: 'Assign a role to a user' })
+  @ApiResponse({ status: 201, type: RoleAssignmentResponseDto })
   @ApiCommonErrors(400, 401, 404, 409, 422)
   async assignRole(
     @CurrentUser() user: JwtPayload,
@@ -94,6 +97,7 @@ export class AccessController {
   @HttpCode(204)
   @ApiOperation({ summary: 'Revoke a role assignment' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Role assignment revoked' })
   @ApiCommonErrors(401, 404)
   async revokeRole(
     @CurrentUser() user: JwtPayload,

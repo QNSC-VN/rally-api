@@ -1,21 +1,28 @@
-export interface RoleResponseDto {
-  id: string;
-  tenantId: string | null;
-  name: string;
-  slug: string;
-  description: string | null;
-  isSystem: boolean;
-  permissions: string[];
-  createdAt: string;
-}
+import { createZodDto } from 'nestjs-zod';
+import { z } from 'zod';
 
-export interface RoleAssignmentResponseDto {
-  id: string;
-  tenantId: string;
-  userId: string;
-  roleId: string;
-  scopeType: string;
-  scopeId: string | null;
-  grantedBy: string | null;
-  createdAt: string;
-}
+export const RoleResponseSchema = z.object({
+  id: z.string().uuid(),
+  tenantId: z.string().uuid().nullable(),
+  name: z.string(),
+  slug: z.string(),
+  description: z.string().nullable(),
+  isSystem: z.boolean(),
+  permissions: z.array(z.string()),
+  createdAt: z.string().datetime(),
+});
+
+export class RoleResponseDto extends createZodDto(RoleResponseSchema) {}
+
+export const RoleAssignmentResponseSchema = z.object({
+  id: z.string().uuid(),
+  tenantId: z.string().uuid(),
+  userId: z.string().uuid(),
+  roleId: z.string().uuid(),
+  scopeType: z.string(),
+  scopeId: z.string().uuid().nullable(),
+  grantedBy: z.string().uuid().nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export class RoleAssignmentResponseDto extends createZodDto(RoleAssignmentResponseSchema) {}

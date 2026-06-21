@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Patch, Post, Req, Res } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import '@fastify/cookie';
 import { Auth, ApiCommonErrors, Public, UnauthorizedException } from '@platform';
@@ -34,6 +34,7 @@ export class AuthController {
   @Public()
   @HttpCode(200)
   @ApiOperation({ summary: 'Authenticate with email + password' })
+  @ApiResponse({ status: 200, type: AuthTokenResponseDto })
   @ApiCommonErrors(400, 401, 422)
   async login(
     @Body() dto: LoginDto,
@@ -61,6 +62,10 @@ export class AuthController {
   @Public()
   @HttpCode(200)
   @ApiOperation({ summary: 'Rotate refresh token and issue new access token' })
+  @ApiResponse({
+    status: 200,
+    schema: { properties: { accessToken: { type: 'string' }, expiresIn: { type: 'number' } } },
+  })
   @ApiCommonErrors(401)
   async refresh(
     @Req() req: FastifyRequest,
@@ -88,6 +93,7 @@ export class AuthController {
   @Auth()
   @HttpCode(204)
   @ApiOperation({ summary: 'Revoke current session and access token' })
+  @ApiResponse({ status: 204, description: 'Session revoked' })
   @ApiCommonErrors(401)
   async logout(
     @CurrentUser() user: JwtPayload,
@@ -102,6 +108,7 @@ export class AuthController {
   @Get('me')
   @Auth()
   @ApiOperation({ summary: 'Get authenticated user profile' })
+  @ApiResponse({ status: 200, type: UserProfileResponseDto })
   @ApiCommonErrors(401)
   async getMe(@CurrentUser() user: JwtPayload): Promise<UserProfileResponseDto> {
     const profile = await this.authService.getMe(user.sub);
@@ -123,6 +130,7 @@ export class AuthController {
   @Patch('me')
   @Auth()
   @ApiOperation({ summary: 'Update authenticated user profile' })
+  @ApiResponse({ status: 200, type: UserProfileResponseDto })
   @ApiCommonErrors(400, 401, 422)
   async updateProfile(
     @CurrentUser() user: JwtPayload,
@@ -148,6 +156,7 @@ export class AuthController {
   @Auth()
   @HttpCode(204)
   @ApiOperation({ summary: 'Change authenticated user password' })
+  @ApiResponse({ status: 204, description: 'Password changed' })
   @ApiCommonErrors(400, 401, 422)
   async changePassword(
     @CurrentUser() user: JwtPayload,
@@ -162,6 +171,7 @@ export class AuthController {
   @Auth()
   @HttpCode(204)
   @ApiOperation({ summary: 'Revoke all sessions for the authenticated user' })
+  @ApiResponse({ status: 204, description: 'All sessions revoked' })
   @ApiCommonErrors(401)
   async logoutAll(
     @CurrentUser() user: JwtPayload,
@@ -177,6 +187,7 @@ export class AuthController {
   @Public()
   @HttpCode(200)
   @ApiOperation({ summary: 'Request a password reset link (always returns 200)' })
+  @ApiResponse({ status: 200, schema: { properties: { message: { type: 'string' } } } })
   async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ message: string }> {
     await this.authService.forgotPassword(dto.email);
     return { message: 'If that email exists, a password reset link has been sent.' };
@@ -188,6 +199,7 @@ export class AuthController {
   @Public()
   @HttpCode(204)
   @ApiOperation({ summary: 'Reset password using a token from forgot-password email' })
+  @ApiResponse({ status: 204, description: 'Password reset successful' })
   @ApiCommonErrors(400, 401, 422)
   async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
     await this.authService.resetPassword(dto.token, dto.newPassword);

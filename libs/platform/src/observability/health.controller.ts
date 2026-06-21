@@ -1,6 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { HealthCheck, HealthCheckService } from '@nestjs/terminus';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Public } from '../auth/decorators';
 import { InjectDrizzle } from '../database/drizzle.provider';
 import type { DrizzleDB } from '../database/drizzle.provider';
@@ -19,6 +19,11 @@ export class HealthController {
   /** Liveness probe — is the process alive? */
   @Get('healthz')
   @Public()
+  @ApiOperation({ summary: 'Liveness probe — returns ok if process is alive' })
+  @ApiResponse({
+    status: 200,
+    schema: { properties: { status: { type: 'string', example: 'ok' } } },
+  })
   healthz() {
     return { status: 'ok' };
   }
@@ -27,6 +32,13 @@ export class HealthController {
   @Get('readyz')
   @Public()
   @HealthCheck()
+  @ApiOperation({ summary: 'Readiness probe — checks DB and cache connectivity' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      properties: { status: { type: 'string', example: 'ok' }, details: { type: 'object' } },
+    },
+  })
   async readyz() {
     return this.health.check([
       async () => {

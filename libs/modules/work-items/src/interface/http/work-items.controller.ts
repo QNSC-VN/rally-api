@@ -10,8 +10,8 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors, buildPageArgs } from '@platform';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Auth, ApiCommonErrors, ApiPagedResponse, buildPageArgs } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { WorkItemsService } from '../../application/work-items.service';
@@ -23,7 +23,7 @@ import {
   ReorderWorkItemsDto,
   AddLabelDto,
 } from './dto/work-item-request.dto';
-import type { WorkItemResponseDto } from './dto/work-item-response.dto';
+import { WorkItemResponseDto } from './dto/work-item-response.dto';
 import type { WorkItem } from '../../domain/work-item.types';
 
 // ── Mapper ────────────────────────────────────────────────────────────────────
@@ -68,6 +68,7 @@ export class WorkItemsController {
 
   @Get()
   @ApiOperation({ summary: 'List work items in a project' })
+  @ApiPagedResponse(WorkItemResponseDto)
   @ApiCommonErrors(400, 401, 404)
   async listWorkItems(
     @CurrentUser() user: JwtPayload,
@@ -93,6 +94,7 @@ export class WorkItemsController {
 
   @Post()
   @ApiOperation({ summary: 'Create a work item' })
+  @ApiResponse({ status: 201, type: WorkItemResponseDto })
   @ApiCommonErrors(400, 401, 404, 409, 422)
   async createWorkItem(
     @CurrentUser() user: JwtPayload,
@@ -122,6 +124,7 @@ export class WorkItemsController {
   @Get(':id')
   @ApiOperation({ summary: 'Get a work item by ID' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: WorkItemResponseDto })
   @ApiCommonErrors(401, 404)
   async getWorkItem(
     @CurrentUser() user: JwtPayload,
@@ -136,6 +139,7 @@ export class WorkItemsController {
   @Patch(':id')
   @ApiOperation({ summary: 'Update a work item' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: WorkItemResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
   async updateWorkItem(
     @CurrentUser() user: JwtPayload,
@@ -152,6 +156,7 @@ export class WorkItemsController {
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete a work item (soft delete)' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Work item deleted' })
   @ApiCommonErrors(401, 404)
   async deleteWorkItem(
     @CurrentUser() user: JwtPayload,
@@ -165,6 +170,7 @@ export class WorkItemsController {
   @Patch(':id/move')
   @ApiOperation({ summary: 'Transition a work item to a new workflow status' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: WorkItemResponseDto })
   @ApiCommonErrors(400, 401, 404)
   async moveWorkItem(
     @CurrentUser() user: JwtPayload,
@@ -180,6 +186,7 @@ export class WorkItemsController {
   @Patch('reorder')
   @HttpCode(204)
   @ApiOperation({ summary: 'Bulk update work item ranks for backlog reordering' })
+  @ApiResponse({ status: 204, description: 'Work items reordered' })
   @ApiCommonErrors(400, 401, 404, 422)
   async reorderWorkItems(
     @CurrentUser() user: JwtPayload,
@@ -193,6 +200,16 @@ export class WorkItemsController {
   @Get(':id/labels')
   @ApiOperation({ summary: 'List labels on a work item' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string' }, name: { type: 'string' }, color: { type: 'string' } },
+      },
+    },
+  })
   @ApiCommonErrors(401, 404)
   async listWorkItemLabels(
     @CurrentUser() user: JwtPayload,
@@ -205,6 +222,7 @@ export class WorkItemsController {
   @HttpCode(204)
   @ApiOperation({ summary: 'Add a label to a work item' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Label added' })
   @ApiCommonErrors(400, 401, 404, 422)
   async addLabel(
     @CurrentUser() user: JwtPayload,
@@ -219,6 +237,7 @@ export class WorkItemsController {
   @ApiOperation({ summary: 'Remove a label from a work item' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'labelId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Label removed' })
   @ApiCommonErrors(401, 404)
   async removeLabel(
     @CurrentUser() user: JwtPayload,

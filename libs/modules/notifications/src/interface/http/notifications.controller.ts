@@ -1,11 +1,11 @@
 import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Auth, ApiCommonErrors } from '@platform';
 import type { JwtPayload } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { NotificationsService } from '../../application/notifications.service';
 import { ListNotificationsDto } from './dto/notification-request.dto';
-import type { NotificationResponseDto } from './dto/notification-response.dto';
+import { NotificationResponseDto } from './dto/notification-response.dto';
 import type { Notification } from '../../domain/notification.types';
 
 function toDto(n: Notification): NotificationResponseDto {
@@ -31,6 +31,7 @@ export class NotificationsController {
 
   @Get()
   @ApiOperation({ summary: 'List notifications for the current user' })
+  @ApiResponse({ status: 200, type: [NotificationResponseDto] })
   @ApiCommonErrors(401)
   async list(
     @CurrentUser() user: JwtPayload,
@@ -48,6 +49,7 @@ export class NotificationsController {
   @HttpCode(204)
   @ApiOperation({ summary: 'Mark a notification as read' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Marked as read' })
   @ApiCommonErrors(401, 404)
   async markRead(
     @CurrentUser() user: JwtPayload,
@@ -59,6 +61,7 @@ export class NotificationsController {
   @Post('read-all')
   @HttpCode(204)
   @ApiOperation({ summary: 'Mark all notifications as read' })
+  @ApiResponse({ status: 204, description: 'All notifications marked as read' })
   @ApiCommonErrors(401)
   async markAllRead(@CurrentUser() user: JwtPayload): Promise<void> {
     await this.notificationsService.markAllRead(user);

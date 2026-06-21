@@ -10,13 +10,13 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors, buildPageArgs } from '@platform';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Auth, ApiCommonErrors, ApiPagedResponse, buildPageArgs } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { ReleasesService } from '../../application/releases.service';
 import { ReleaseQueryDto, CreateReleaseDto, UpdateReleaseDto } from './dto/release-request.dto';
-import type { ReleaseResponseDto } from './dto/release-response.dto';
+import { ReleaseResponseDto } from './dto/release-response.dto';
 import type { Release } from '../../domain/release.types';
 
 function toReleaseDto(r: Release): ReleaseResponseDto {
@@ -42,6 +42,7 @@ export class ReleasesController {
 
   @Get()
   @ApiOperation({ summary: 'List releases for a project' })
+  @ApiPagedResponse(ReleaseResponseDto)
   @ApiCommonErrors(400, 401, 404)
   async listReleases(
     @CurrentUser() user: JwtPayload,
@@ -54,6 +55,7 @@ export class ReleasesController {
 
   @Post()
   @ApiOperation({ summary: 'Create a release' })
+  @ApiResponse({ status: 201, type: ReleaseResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
   async createRelease(
     @CurrentUser() user: JwtPayload,
@@ -69,6 +71,7 @@ export class ReleasesController {
   @Get(':id')
   @ApiOperation({ summary: 'Get release details' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: ReleaseResponseDto })
   @ApiCommonErrors(401, 404)
   async getRelease(
     @CurrentUser() user: JwtPayload,
@@ -81,6 +84,7 @@ export class ReleasesController {
   @Patch(':id')
   @ApiOperation({ summary: 'Update release details' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: ReleaseResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
   async updateRelease(
     @CurrentUser() user: JwtPayload,
@@ -95,6 +99,7 @@ export class ReleasesController {
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete a planned release' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Release deleted' })
   @ApiCommonErrors(400, 401, 404)
   async deleteRelease(
     @CurrentUser() user: JwtPayload,
@@ -106,6 +111,7 @@ export class ReleasesController {
   @Post(':id/ship')
   @ApiOperation({ summary: 'Mark a release as shipped' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, type: ReleaseResponseDto })
   @ApiCommonErrors(400, 401, 404)
   async shipRelease(
     @CurrentUser() user: JwtPayload,

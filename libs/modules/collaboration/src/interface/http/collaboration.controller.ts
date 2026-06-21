@@ -9,7 +9,7 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Auth, ApiCommonErrors } from '@platform';
 import type { JwtPayload } from '@platform';
 import { CurrentUser } from '@modules/identity';
@@ -19,7 +19,7 @@ import {
   UpdateCommentDto,
   CreateAttachmentDto,
 } from './dto/collaboration-request.dto';
-import type { CommentResponseDto, AttachmentResponseDto } from './dto/collaboration-response.dto';
+import { CommentResponseDto, AttachmentResponseDto } from './dto/collaboration-response.dto';
 import type { Comment, Attachment } from '../../domain/collaboration.types';
 
 function toCommentDto(c: Comment): CommentResponseDto {
@@ -59,6 +59,7 @@ export class CollaborationController {
   @Get('comments')
   @ApiOperation({ summary: 'List comments for a work item' })
   @ApiParam({ name: 'workItemId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: [CommentResponseDto] })
   @ApiCommonErrors(401, 404)
   async listComments(
     @CurrentUser() user: JwtPayload,
@@ -71,6 +72,7 @@ export class CollaborationController {
   @Post('comments')
   @ApiOperation({ summary: 'Add a comment to a work item' })
   @ApiParam({ name: 'workItemId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, type: CommentResponseDto })
   @ApiCommonErrors(400, 401, 422)
   async createComment(
     @CurrentUser() user: JwtPayload,
@@ -90,6 +92,7 @@ export class CollaborationController {
   @ApiOperation({ summary: 'Update a comment' })
   @ApiParam({ name: 'workItemId', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'commentId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: CommentResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
   async updateComment(
     @CurrentUser() user: JwtPayload,
@@ -105,6 +108,7 @@ export class CollaborationController {
   @ApiOperation({ summary: 'Delete a comment (soft delete)' })
   @ApiParam({ name: 'workItemId', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'commentId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Comment deleted' })
   @ApiCommonErrors(401, 404)
   async deleteComment(
     @CurrentUser() user: JwtPayload,
@@ -118,6 +122,7 @@ export class CollaborationController {
   @Get('attachments')
   @ApiOperation({ summary: 'List attachments for a work item' })
   @ApiParam({ name: 'workItemId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: [AttachmentResponseDto] })
   @ApiCommonErrors(401, 404)
   async listAttachments(
     @CurrentUser() user: JwtPayload,
@@ -130,6 +135,7 @@ export class CollaborationController {
   @Post('attachments')
   @ApiOperation({ summary: 'Register an attachment (after S3 upload)' })
   @ApiParam({ name: 'workItemId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, type: AttachmentResponseDto })
   @ApiCommonErrors(400, 401, 422)
   async createAttachment(
     @CurrentUser() user: JwtPayload,
@@ -145,6 +151,7 @@ export class CollaborationController {
   @ApiOperation({ summary: 'Delete an attachment (soft delete)' })
   @ApiParam({ name: 'workItemId', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'attachmentId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Attachment deleted' })
   @ApiCommonErrors(401, 404)
   async deleteAttachment(
     @CurrentUser() user: JwtPayload,

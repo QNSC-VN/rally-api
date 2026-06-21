@@ -10,8 +10,8 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors, buildPageArgs } from '@platform';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Auth, ApiCommonErrors, ApiPagedResponse, buildPageArgs } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { PlanningService } from '../../application/planning.service';
@@ -21,7 +21,7 @@ import {
   UpdateSprintDto,
   CompleteSprintDto,
 } from './dto/sprint-request.dto';
-import type { SprintResponseDto } from './dto/sprint-response.dto';
+import { SprintResponseDto } from './dto/sprint-response.dto';
 import type { Sprint } from '../../domain/sprint.types';
 
 // ── Mapper ────────────────────────────────────────────────────────────────────
@@ -52,6 +52,7 @@ export class SprintsController {
 
   @Get()
   @ApiOperation({ summary: 'List sprints for a project' })
+  @ApiPagedResponse(SprintResponseDto)
   @ApiCommonErrors(400, 401, 404)
   async listSprints(
     @CurrentUser() user: JwtPayload,
@@ -64,6 +65,7 @@ export class SprintsController {
 
   @Post()
   @ApiOperation({ summary: 'Create a sprint' })
+  @ApiResponse({ status: 201, type: SprintResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
   async createSprint(
     @CurrentUser() user: JwtPayload,
@@ -80,6 +82,7 @@ export class SprintsController {
   @Get(':id')
   @ApiOperation({ summary: 'Get sprint details' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: SprintResponseDto })
   @ApiCommonErrors(401, 404)
   async getSprint(
     @CurrentUser() user: JwtPayload,
@@ -92,6 +95,7 @@ export class SprintsController {
   @Patch(':id')
   @ApiOperation({ summary: 'Update sprint details' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: SprintResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
   async updateSprint(
     @CurrentUser() user: JwtPayload,
@@ -106,6 +110,7 @@ export class SprintsController {
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete a planned sprint' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Sprint deleted' })
   @ApiCommonErrors(400, 401, 404)
   async deleteSprint(
     @CurrentUser() user: JwtPayload,
@@ -117,6 +122,7 @@ export class SprintsController {
   @Post(':id/start')
   @ApiOperation({ summary: 'Start a sprint (planned → active)' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, type: SprintResponseDto })
   @ApiCommonErrors(400, 401, 404, 409)
   async startSprint(
     @CurrentUser() user: JwtPayload,

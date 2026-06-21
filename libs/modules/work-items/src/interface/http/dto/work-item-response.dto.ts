@@ -1,25 +1,32 @@
-export interface WorkItemResponseDto {
-  id: string;
-  tenantId: string;
-  projectId: string;
-  itemKey: string;
-  type: string;
-  title: string;
-  description: string | null;
-  statusId: string;
-  priority: string;
-  assigneeId: string | null;
-  reporterId: string | null;
-  parentId: string | null;
-  iterationId: string | null;
-  releaseId: string | null;
-  storyPoints: number | null;
-  acceptanceCriteria: string | null;
-  isBlocked: boolean;
-  blockedReason: string | null;
-  rank: string;
-  customFields: Record<string, unknown>;
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
-}
+import { createZodDto } from 'nestjs-zod';
+import { z } from 'zod';
+
+export const WorkItemResponseSchema = z.object({
+  id: z.string().uuid(),
+  tenantId: z.string().uuid(),
+  projectId: z.string().uuid(),
+  itemKey: z.string().describe('Sequential key e.g. PROJ-42'),
+  type: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  statusId: z.string().uuid(),
+  priority: z.string(),
+  assigneeId: z.string().uuid().nullable(),
+  reporterId: z.string().uuid().nullable(),
+  parentId: z.string().uuid().nullable(),
+  iterationId: z.string().uuid().nullable(),
+  releaseId: z.string().uuid().nullable(),
+  storyPoints: z.number().int().nullable(),
+  acceptanceCriteria: z.string().nullable(),
+  isBlocked: z.boolean(),
+  blockedReason: z.string().nullable(),
+  rank: z.string(),
+  customFields: z.record(z.string(), z.unknown()),
+  createdBy: z.string().uuid(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export class WorkItemResponseDto extends createZodDto(WorkItemResponseSchema) {}
+
+export type WorkItemResponseDtoShape = z.infer<typeof WorkItemResponseSchema>;

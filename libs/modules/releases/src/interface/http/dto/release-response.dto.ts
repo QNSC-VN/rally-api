@@ -1,12 +1,17 @@
-export interface ReleaseResponseDto {
-  id: string;
-  tenantId: string;
-  projectId: string;
-  name: string;
-  description: string | null;
-  status: string;
-  targetDate: string | null;
-  releasedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+import { createZodDto } from 'nestjs-zod';
+import { z } from 'zod';
+
+export const ReleaseResponseSchema = z.object({
+  id: z.string().uuid(),
+  tenantId: z.string().uuid(),
+  projectId: z.string().uuid(),
+  name: z.string(),
+  description: z.string().nullable(),
+  status: z.enum(['planned', 'released', 'archived']),
+  targetDate: z.string().nullable().describe('YYYY-MM-DD'),
+  releasedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export class ReleaseResponseDto extends createZodDto(ReleaseResponseSchema) {}

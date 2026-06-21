@@ -1,63 +1,66 @@
-// ── Tenant response ──────────────────────────────────────────────────────────
+import { createZodDto } from 'nestjs-zod';
+import { z } from 'zod';
 
-export interface TenantResponseDto {
-  id: string;
-  slug: string;
-  name: string;
-  status: string;
-  plan: string;
-  settings: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-}
+export const TenantResponseSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string(),
+  name: z.string(),
+  status: z.string().describe('Tenant status: active | suspended | deleted'),
+  plan: z.string(),
+  settings: z.record(z.string(), z.unknown()),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
 
-// ── Workspace response ───────────────────────────────────────────────────────
+export class TenantResponseDto extends createZodDto(TenantResponseSchema) {}
 
-export interface WorkspaceResponseDto {
-  id: string;
-  tenantId: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  avatarUrl: string | null;
-  settings: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-}
+export const WorkspaceResponseSchema = z.object({
+  id: z.string().uuid(),
+  tenantId: z.string().uuid(),
+  slug: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  avatarUrl: z.string().url().nullable(),
+  settings: z.record(z.string(), z.unknown()),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
 
-// ── Member response ──────────────────────────────────────────────────────────
+export class WorkspaceResponseDto extends createZodDto(WorkspaceResponseSchema) {}
 
-export interface MemberResponseDto {
-  id: string;
-  workspaceId: string;
-  userId: string;
-  roleId: string | null;
-  status: string;
-  joinedAt: string;
-  createdAt: string;
-}
+export const MemberResponseSchema = z.object({
+  id: z.string().uuid(),
+  workspaceId: z.string().uuid(),
+  userId: z.string().uuid(),
+  roleId: z.string().uuid().nullable(),
+  status: z.string(),
+  joinedAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
+});
 
-// ── Invitation response ───────────────────────────────────────────────────────
+export class MemberResponseDto extends createZodDto(MemberResponseSchema) {}
 
-export interface InvitationResponseDto {
-  id: string;
-  workspaceId: string;
-  email: string;
-  roleId: string | null;
-  status: string;
-  invitedBy: string;
-  expiresAt: string;
-  acceptedBy: string | null;
-  acceptedAt: string | null;
-  createdAt: string;
-}
+export const InvitationResponseSchema = z.object({
+  id: z.string().uuid(),
+  workspaceId: z.string().uuid(),
+  email: z.string().email(),
+  roleId: z.string().uuid().nullable(),
+  status: z.string().describe('Invitation status: pending | accepted | cancelled | expired'),
+  invitedBy: z.string().uuid(),
+  expiresAt: z.string().datetime(),
+  acceptedBy: z.string().uuid().nullable(),
+  acceptedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+});
 
-// ── Workspace settings response ───────────────────────────────────────────────
+export class InvitationResponseDto extends createZodDto(InvitationResponseSchema) {}
 
-export interface WorkspaceSettingsResponseDto {
-  workspaceId: string;
-  timezone: string | null;
-  defaultLocale: string | null;
-  dateFormat: string | null;
-  updatedAt: string;
-}
+export const WorkspaceSettingsResponseSchema = z.object({
+  workspaceId: z.string().uuid(),
+  timezone: z.string().nullable(),
+  defaultLocale: z.string().nullable(),
+  dateFormat: z.string().nullable(),
+  updatedAt: z.string().datetime(),
+});
+
+export class WorkspaceSettingsResponseDto extends createZodDto(WorkspaceSettingsResponseSchema) {}

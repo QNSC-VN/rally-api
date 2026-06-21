@@ -9,7 +9,7 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Auth, ApiCommonErrors } from '@platform';
 import type { JwtPayload } from '@platform';
 import { CurrentUser } from '@modules/identity';
@@ -81,6 +81,7 @@ export class TeamController {
   @Get('workspaces/:workspaceId/teams')
   @ApiOperation({ summary: 'List teams in a workspace' })
   @ApiParam({ name: 'workspaceId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, schema: { type: 'array', items: { type: 'object' } } })
   @ApiCommonErrors(401, 404)
   async listTeams(@Param('workspaceId', ParseUUIDPipe) workspaceId: string) {
     const teams = await this.teamService.listTeams(workspaceId);
@@ -90,6 +91,7 @@ export class TeamController {
   @Post('workspaces/:workspaceId/teams')
   @ApiOperation({ summary: 'Create a team in a workspace' })
   @ApiParam({ name: 'workspaceId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, schema: { type: 'object' } })
   @ApiCommonErrors(400, 401, 409, 422)
   async createTeam(
     @CurrentUser() user: JwtPayload,
@@ -111,6 +113,7 @@ export class TeamController {
   @Get('teams/:id')
   @ApiOperation({ summary: 'Get team details' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, schema: { type: 'object' } })
   @ApiCommonErrors(401, 404)
   async getTeam(@Param('id', ParseUUIDPipe) id: string) {
     const team = await this.teamService.getTeam(id);
@@ -120,6 +123,7 @@ export class TeamController {
   @Patch('teams/:id')
   @ApiOperation({ summary: 'Update team' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, schema: { type: 'object' } })
   @ApiCommonErrors(400, 401, 404, 422)
   async updateTeam(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTeamDto) {
     const team = await this.teamService.updateTeam(id, dto);
@@ -130,6 +134,7 @@ export class TeamController {
   @Get('teams/:id/members')
   @ApiOperation({ summary: 'List team members' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, schema: { type: 'array', items: { type: 'object' } } })
   @ApiCommonErrors(401, 404)
   async listTeamMembers(@Param('id', ParseUUIDPipe) id: string) {
     const members = await this.teamService.listTeamMembers(id);
@@ -139,6 +144,7 @@ export class TeamController {
   @Post('teams/:id/members')
   @ApiOperation({ summary: 'Add a user to a team' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, schema: { type: 'object' } })
   @ApiCommonErrors(400, 401, 404, 409, 422)
   async addTeamMember(
     @CurrentUser() user: JwtPayload,
@@ -154,6 +160,7 @@ export class TeamController {
   @ApiOperation({ summary: 'Remove a user from a team' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'userId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Member removed' })
   @ApiCommonErrors(401, 404)
   async removeTeamMember(
     @Param('id', ParseUUIDPipe) id: string,

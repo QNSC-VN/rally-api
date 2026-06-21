@@ -8,12 +8,15 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Auth, ApiCommonErrors } from '@platform';
 import type { JwtPayload } from '@platform';
 import { CurrentUser } from '@modules/identity';
-import { ProjectsService } from '@modules/projects';
-import type { WorkflowStatusResponseDto, WorkflowTransitionResponseDto } from '@modules/projects';
+import {
+  ProjectsService,
+  WorkflowStatusResponseDto,
+  WorkflowTransitionResponseDto,
+} from '@modules/projects';
 import {
   CreateWorkflowStatusDto,
   ReorderStatusesDto,
@@ -55,6 +58,7 @@ export class WorkflowController {
   @Post('statuses')
   @ApiOperation({ summary: 'Create a workflow status for a project' })
   @ApiParam({ name: 'projectId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, type: WorkflowStatusResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
   async createStatus(
     @CurrentUser() user: JwtPayload,
@@ -74,6 +78,7 @@ export class WorkflowController {
   @Patch('statuses/reorder')
   @ApiOperation({ summary: 'Reorder workflow statuses' })
   @ApiParam({ name: 'projectId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Statuses reordered' })
   @ApiCommonErrors(400, 401, 404, 422)
   @HttpCode(204)
   async reorderStatuses(
@@ -89,6 +94,7 @@ export class WorkflowController {
   @ApiOperation({ summary: 'Delete a workflow status' })
   @ApiParam({ name: 'projectId', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'statusId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Status deleted' })
   @ApiCommonErrors(401, 404)
   async deleteStatus(
     @CurrentUser() user: JwtPayload,
@@ -103,6 +109,7 @@ export class WorkflowController {
   @Post('transitions')
   @ApiOperation({ summary: 'Create a workflow transition rule' })
   @ApiParam({ name: 'projectId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, type: WorkflowTransitionResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
   async createTransition(
     @CurrentUser() user: JwtPayload,
@@ -122,6 +129,7 @@ export class WorkflowController {
   @ApiOperation({ summary: 'Delete a workflow transition rule' })
   @ApiParam({ name: 'projectId', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'transitionId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Transition deleted' })
   @ApiCommonErrors(401, 404)
   async deleteTransition(
     @CurrentUser() user: JwtPayload,

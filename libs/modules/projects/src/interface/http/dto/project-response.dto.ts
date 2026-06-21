@@ -1,49 +1,52 @@
-// ── Project response ──────────────────────────────────────────────────────────
+import { createZodDto } from 'nestjs-zod';
+import { z } from 'zod';
 
-export interface ProjectResponseDto {
-  id: string;
-  tenantId: string;
-  workspaceId: string;
-  key: string;
-  name: string;
-  description: string | null;
-  leadId: string | null;
-  status: string;
-  settings: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-}
+export const ProjectResponseSchema = z.object({
+  id: z.string().uuid(),
+  tenantId: z.string().uuid(),
+  workspaceId: z.string().uuid(),
+  key: z.string().max(10).describe('Unique short project key e.g. PROJ'),
+  name: z.string(),
+  description: z.string().nullable(),
+  leadId: z.string().uuid().nullable(),
+  status: z.string().describe('Project status: active | archived'),
+  settings: z.record(z.string(), z.unknown()),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
 
-// ── Workflow status response ──────────────────────────────────────────────────
+export class ProjectResponseDto extends createZodDto(ProjectResponseSchema) {}
 
-export interface WorkflowStatusResponseDto {
-  id: string;
-  projectId: string;
-  name: string;
-  category: string;
-  color: string | null;
-  position: number;
-  isDefault: boolean;
-}
+export const WorkflowStatusResponseSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().uuid(),
+  name: z.string(),
+  category: z.enum(['to_do', 'in_progress', 'done']),
+  color: z.string().nullable(),
+  position: z.number().int(),
+  isDefault: z.boolean(),
+});
 
-// ── Workflow transition response ──────────────────────────────────────────────
+export class WorkflowStatusResponseDto extends createZodDto(WorkflowStatusResponseSchema) {}
 
-export interface WorkflowTransitionResponseDto {
-  id: string;
-  projectId: string;
-  fromStatusId: string | null;
-  toStatusId: string;
-  name: string | null;
-  requiredRole: string | null;
-}
+export const WorkflowTransitionResponseSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().uuid(),
+  fromStatusId: z.string().uuid().nullable(),
+  toStatusId: z.string().uuid(),
+  name: z.string().nullable(),
+  requiredRole: z.string().nullable(),
+});
 
-// ── Label response ────────────────────────────────────────────────────────────
+export class WorkflowTransitionResponseDto extends createZodDto(WorkflowTransitionResponseSchema) {}
 
-export interface LabelResponseDto {
-  id: string;
-  projectId: string;
-  name: string;
-  color: string;
-  createdAt: string;
-  updatedAt: string;
-}
+export const LabelResponseSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().uuid(),
+  name: z.string(),
+  color: z.string(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export class LabelResponseDto extends createZodDto(LabelResponseSchema) {}

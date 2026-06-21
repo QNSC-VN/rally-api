@@ -10,8 +10,8 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors, buildPageArgs } from '@platform';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Auth, ApiCommonErrors, ApiPagedResponse, buildPageArgs } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { ProjectsService } from '../../application/projects.service';
@@ -22,7 +22,7 @@ import {
   CreateLabelDto,
   UpdateLabelDto,
 } from './dto/project-request.dto';
-import type {
+import {
   ProjectResponseDto,
   WorkflowStatusResponseDto,
   WorkflowTransitionResponseDto,
@@ -95,6 +95,7 @@ export class ProjectsController {
 
   @Get()
   @ApiOperation({ summary: 'List projects in a workspace' })
+  @ApiPagedResponse(ProjectResponseDto)
   @ApiCommonErrors(400, 401)
   async listProjects(
     @CurrentUser() user: JwtPayload,
@@ -109,6 +110,7 @@ export class ProjectsController {
 
   @Post()
   @ApiOperation({ summary: 'Create a new project' })
+  @ApiResponse({ status: 201, type: ProjectResponseDto })
   @ApiCommonErrors(400, 401, 409, 422)
   async createProject(
     @CurrentUser() user: JwtPayload,
@@ -130,6 +132,7 @@ export class ProjectsController {
   @Get(':id')
   @ApiOperation({ summary: 'Get project details' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: ProjectResponseDto })
   @ApiCommonErrors(401, 404)
   async getProject(
     @CurrentUser() user: JwtPayload,
@@ -144,6 +147,7 @@ export class ProjectsController {
   @Patch(':id')
   @ApiOperation({ summary: 'Update project' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: ProjectResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
   async updateProject(
     @CurrentUser() user: JwtPayload,
@@ -160,6 +164,7 @@ export class ProjectsController {
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete project (soft delete)' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Project deleted' })
   @ApiCommonErrors(401, 404)
   async deleteProject(
     @CurrentUser() user: JwtPayload,
@@ -173,6 +178,7 @@ export class ProjectsController {
   @Get(':id/statuses')
   @ApiOperation({ summary: 'List workflow statuses for a project' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: [WorkflowStatusResponseDto] })
   @ApiCommonErrors(401, 404)
   async listStatuses(
     @CurrentUser() user: JwtPayload,
@@ -187,6 +193,7 @@ export class ProjectsController {
   @Get(':id/transitions')
   @ApiOperation({ summary: 'List workflow transitions for a project' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: [WorkflowTransitionResponseDto] })
   @ApiCommonErrors(401, 404)
   async listTransitions(
     @CurrentUser() user: JwtPayload,
@@ -200,6 +207,7 @@ export class ProjectsController {
   @Get(':id/labels')
   @ApiOperation({ summary: 'List labels for a project' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: [LabelResponseDto] })
   @ApiCommonErrors(401, 404)
   async listLabels(
     @CurrentUser() user: JwtPayload,
@@ -212,6 +220,7 @@ export class ProjectsController {
   @Post(':id/labels')
   @ApiOperation({ summary: 'Create a label for a project' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, type: LabelResponseDto })
   @ApiCommonErrors(400, 401, 404, 409, 422)
   async createLabel(
     @CurrentUser() user: JwtPayload,
@@ -226,6 +235,7 @@ export class ProjectsController {
   @ApiOperation({ summary: 'Update a label' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'labelId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: LabelResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
   async updateLabel(
     @CurrentUser() user: JwtPayload,
@@ -242,6 +252,7 @@ export class ProjectsController {
   @ApiOperation({ summary: 'Delete a label' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'labelId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Label deleted' })
   @ApiCommonErrors(401, 404)
   async deleteLabel(
     @CurrentUser() user: JwtPayload,
@@ -278,6 +289,7 @@ export class ProjectsController {
   @ApiOperation({ summary: 'Unlink a team from a project' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'teamId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Team unlinked' })
   @ApiCommonErrors(401, 404)
   async unlinkTeam(
     @CurrentUser() user: JwtPayload,
@@ -331,6 +343,7 @@ export class ProjectsController {
   @ApiOperation({ summary: 'Remove a member from a project' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'userId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Member removed' })
   @ApiCommonErrors(401, 404)
   async removeProjectMember(
     @CurrentUser() user: JwtPayload,

@@ -10,8 +10,8 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors, buildPageArgs, PageQueryDto } from '@platform';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Auth, ApiCommonErrors, ApiPagedResponse, buildPageArgs, PageQueryDto } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { TenancyService } from '../../application/tenancy.service';
@@ -24,7 +24,7 @@ import {
   AcceptInvitationDto,
   UpdateWorkspaceSettingsDto,
 } from './dto/tenancy-request.dto';
-import type {
+import {
   TenantResponseDto,
   WorkspaceResponseDto,
   MemberResponseDto,
@@ -116,6 +116,7 @@ export class TenantController {
   @Get(':id')
   @ApiOperation({ summary: 'Get tenant details' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: TenantResponseDto })
   @ApiCommonErrors(401, 403, 404)
   async getTenant(@Param('id', ParseUUIDPipe) id: string): Promise<TenantResponseDto> {
     const tenant = await this.tenancyService.getTenant(id);
@@ -133,6 +134,7 @@ export class WorkspaceController {
 
   @Get()
   @ApiOperation({ summary: 'List workspaces for the authenticated tenant' })
+  @ApiPagedResponse(WorkspaceResponseDto)
   @ApiCommonErrors(401)
   async listWorkspaces(
     @CurrentUser() user: JwtPayload,
@@ -147,6 +149,7 @@ export class WorkspaceController {
 
   @Post()
   @ApiOperation({ summary: 'Create a new workspace' })
+  @ApiResponse({ status: 201, type: WorkspaceResponseDto })
   @ApiCommonErrors(400, 401, 409, 422)
   async createWorkspace(
     @CurrentUser() user: JwtPayload,
@@ -167,6 +170,7 @@ export class WorkspaceController {
   @Get(':id')
   @ApiOperation({ summary: 'Get workspace details' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: WorkspaceResponseDto })
   @ApiCommonErrors(401, 404)
   async getWorkspace(
     @CurrentUser() user: JwtPayload,
@@ -181,6 +185,7 @@ export class WorkspaceController {
   @Patch(':id')
   @ApiOperation({ summary: 'Update workspace' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: WorkspaceResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
   async updateWorkspace(
     @CurrentUser() user: JwtPayload,
@@ -197,6 +202,7 @@ export class WorkspaceController {
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete workspace (soft delete)' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Workspace deleted' })
   @ApiCommonErrors(401, 404)
   async deleteWorkspace(
     @CurrentUser() user: JwtPayload,
@@ -210,6 +216,7 @@ export class WorkspaceController {
   @Get(':id/members')
   @ApiOperation({ summary: 'List workspace members' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiPagedResponse(MemberResponseDto)
   @ApiCommonErrors(401, 404)
   async listMembers(
     @CurrentUser() user: JwtPayload,
@@ -226,6 +233,7 @@ export class WorkspaceController {
   @Post(':id/members')
   @ApiOperation({ summary: 'Add a user to the workspace' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, type: MemberResponseDto })
   @ApiCommonErrors(400, 401, 404, 409, 422)
   async addMember(
     @CurrentUser() user: JwtPayload,
@@ -242,6 +250,7 @@ export class WorkspaceController {
   @ApiOperation({ summary: 'Update member role or status' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'memberId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: MemberResponseDto })
   @ApiCommonErrors(400, 401, 404, 409, 422)
   async updateMember(
     @CurrentUser() user: JwtPayload,
@@ -266,6 +275,7 @@ export class WorkspaceController {
   @ApiOperation({ summary: 'Remove a user from the workspace' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'userId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Member removed' })
   @ApiCommonErrors(401, 404)
   async removeMember(
     @CurrentUser() user: JwtPayload,
@@ -280,6 +290,7 @@ export class WorkspaceController {
   @Post(':id/invitations')
   @ApiOperation({ summary: 'Invite a user to the workspace by email' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, type: InvitationResponseDto })
   @ApiCommonErrors(400, 401, 409, 422)
   async inviteMember(
     @CurrentUser() user: JwtPayload,
@@ -301,6 +312,7 @@ export class WorkspaceController {
   @Get(':id/invitations')
   @ApiOperation({ summary: 'List invitations for a workspace' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: [InvitationResponseDto] })
   @ApiCommonErrors(401, 404)
   async listInvitations(
     @CurrentUser() user: JwtPayload,
@@ -317,6 +329,7 @@ export class WorkspaceController {
   @ApiOperation({ summary: 'Cancel a pending workspace invitation' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'invitationId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Invitation cancelled' })
   @ApiCommonErrors(401, 404)
   async cancelInvitation(
     @CurrentUser() user: JwtPayload,
@@ -331,6 +344,7 @@ export class WorkspaceController {
   @Get(':id/settings')
   @ApiOperation({ summary: 'Get workspace settings' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: WorkspaceSettingsResponseDto })
   @ApiCommonErrors(401, 404)
   async getSettings(
     @CurrentUser() user: JwtPayload,
@@ -343,6 +357,7 @@ export class WorkspaceController {
   @Patch(':id/settings')
   @ApiOperation({ summary: 'Update workspace settings' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: WorkspaceSettingsResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
   async updateSettings(
     @CurrentUser() user: JwtPayload,
@@ -367,6 +382,7 @@ export class InvitationController {
   @HttpCode(204)
   @ApiOperation({ summary: 'Accept a workspace invitation (authenticated user only)' })
   @ApiBearerAuth('access-token')
+  @ApiResponse({ status: 204, description: 'Invitation accepted' })
   @ApiCommonErrors(400, 401, 404, 422)
   async acceptInvitation(
     @Body() dto: AcceptInvitationDto,

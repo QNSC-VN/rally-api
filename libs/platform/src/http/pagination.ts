@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { applyDecorators, Type } from '@nestjs/common';
+import { ApiExtraModels, ApiOkResponse, getSchemaPath } from '@nestjs/swagger';
 import { ErrorCodes } from '../errors/error-codes';
 import { PreconditionFailedException } from '../errors/exceptions';
 
@@ -102,3 +104,38 @@ export function buildPageArgs(query: PageQuery): {
 // ── DTO class for NestJS controllers ─────────────────────────────────────────
 
 export class PageQueryDto extends createZodDto(PageQuerySchema) {}
+
+// ── Swagger helper for paginated responses ────────────────────────────────────
+//
+// Usage in controllers:
+//   @ApiPagedResponse(WorkItemResponseDto)
+//   async listWorkItems(...): Promise<PagedResult<WorkItemResponseDto>> { ... }
+
+export const ApiPagedResponse = <T>(model: Type<T>) =>
+  applyDecorators(
+    ApiExtraModels(model),
+    ApiOkResponse({
+      description: 'Paginated list',
+      schema: {
+        properties: {
+          data: {
+            type: 'array',
+            items: { $ref: getSchemaPath(model) },
+          },
+          pageInfo: {
+            type: 'object',
+            required: ['nextCursor', 'hasNextPage', 'limit'],
+            properties: {
+              nextCursor: {
+                type: 'string',
+                nullable: true,
+                description: 'Opaque cursor token for the next page',
+              },
+              hasNextPage: { type: 'boolean' },
+              limit: { type: 'number', description: 'Number of items returned per page' },
+            },
+          },
+        },
+      },
+    }),
+  );

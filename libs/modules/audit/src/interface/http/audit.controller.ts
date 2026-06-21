@@ -1,11 +1,11 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors } from '@platform';
+import { Auth, ApiCommonErrors, ApiPagedResponse } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { AuditService } from '../../application/audit.service';
 import { AuditQueryDto } from './dto/audit-request.dto';
-import type { AuditLogResponseDto } from './dto/audit-response.dto';
+import { AuditLogResponseDto } from './dto/audit-response.dto';
 import type { AuditLog } from '../../domain/audit.types';
 
 function toDto(a: AuditLog): AuditLogResponseDto {
@@ -31,6 +31,7 @@ export class AuditController {
 
   @Get()
   @ApiOperation({ summary: 'Query audit logs for the tenant' })
+  @ApiPagedResponse(AuditLogResponseDto)
   @ApiCommonErrors(401, 422)
   async list(
     @CurrentUser() user: JwtPayload,

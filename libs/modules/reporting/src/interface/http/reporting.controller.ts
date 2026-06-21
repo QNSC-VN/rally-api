@@ -1,5 +1,5 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Auth, ApiCommonErrors } from '@platform';
 import type { JwtPayload } from '@platform';
 import { CurrentUser } from '@modules/identity';
@@ -15,6 +15,27 @@ export class ReportingController {
   @Get('sprints/:sprintId/burndown')
   @ApiOperation({ summary: 'Get sprint burndown chart data' })
   @ApiParam({ name: 'sprintId', type: 'string', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      properties: {
+        sprintId: { type: 'string' },
+        points: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              date: { type: 'string' },
+              remainingPoints: { type: 'number' },
+              completedPoints: { type: 'number' },
+              remainingItems: { type: 'number' },
+              completedItems: { type: 'number' },
+            },
+          },
+        },
+      },
+    },
+  })
   @ApiCommonErrors(401, 404)
   async getBurndown(
     @CurrentUser() user: JwtPayload,
@@ -27,6 +48,26 @@ export class ReportingController {
   @ApiOperation({ summary: 'Get sprint velocity for a project' })
   @ApiParam({ name: 'projectId', type: 'string', format: 'uuid' })
   @ApiQuery({ name: 'lastNSprints', required: false, type: Number, example: 6 })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      properties: {
+        projectId: { type: 'string' },
+        sprints: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              sprintId: { type: 'string' },
+              sprintName: { type: 'string' },
+              completedPoints: { type: 'number' },
+              completedItems: { type: 'number' },
+            },
+          },
+        },
+      },
+    },
+  })
   @ApiCommonErrors(401, 404)
   async getVelocity(
     @CurrentUser() user: JwtPayload,
