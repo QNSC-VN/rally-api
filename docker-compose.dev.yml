@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   postgres:
     image: postgres:17-alpine
@@ -34,7 +32,7 @@ services:
   # Replaces real AWS for local development — no AWS account needed.
   # Production AWS resources live in the rally-infra repo (Terraform).
   localstack:
-    image: localstack/localstack:2026.5.4
+    image: localstack/localstack:4
     container_name: rally-localstack
     environment:
       AWS_DEFAULT_REGION: ap-southeast-1

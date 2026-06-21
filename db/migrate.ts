@@ -3,6 +3,13 @@
  * Uses the DATABASE_MIGRATION_URL (privileged role that bypasses RLS).
  * Never run by the app process itself.
  */
+// Load .env for local dev; in CI the env vars are injected directly.
+try {
+  process.loadEnvFile('.env');
+} catch {
+  /* no .env file — CI mode */
+}
+
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';

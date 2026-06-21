@@ -1,3 +1,10 @@
+// Load .env for local dev; in CI the env vars are injected directly.
+try {
+  process.loadEnvFile('.env');
+} catch {
+  /* no .env file — CI mode */
+}
+
 /**
  * Seed script — creates the first tenant, workspace, admin user,
  * system roles + permission catalogue, and default workflow for dev/test.
