@@ -230,6 +230,36 @@ jobs:
           container-name: worker
           image: ${{ env.ECR_REGISTRY }}/rally-worker:${{ env.IMAGE_TAG }}
 
+      # ── Step 4: Smoke test — confirm the new version is actually serving ──────
+      - name: Smoke test
+        run: |
+          # Resolve the ALB URL from the ECS service's load balancer
+          ALB_URL="${{ vars.APP_URL }}"
+          if [ -z "$ALB_URL" ]; then
+            echo "APP_URL not set — skipping smoke test"
+            exit 0
+          fi
+
+          echo "Smoke testing $ALB_URL..."
+
+          # 1. Health check
+          HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$ALB_URL/v1/healthz")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ Health check failed: HTTP $HTTP_STATUS"
+            exit 1
+          fi
+          echo "✅ /v1/healthz → $HTTP_STATUS"
+
+          # 2. API root responds (confirms routing works)
+          HTTP_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" "$ALB_URL/api/docs-json")
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ OpenAPI spec not accessible: HTTP $HTTP_STATUS"
+            exit 1
+          fi
+          echo "✅ /api/docs-json → $HTTP_STATUS"
+
+          echo "All smoke tests passed ✅"
+
       - name: Deployment summary
         run: |
           echo "### Deployment complete ✅" >> "$GITHUB_STEP_SUMMARY"
@@ -238,3 +268,39 @@ jobs:
           echo "| **Environment** | \`$ENVIRONMENT\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Image tag** | \`$IMAGE_TAG\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| **Commit** | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **URL** | \`${{ vars.APP_URL }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      # ── Optional: Slack notification ─────────────────────────────────────────
+      # Set SLACK_WEBHOOK_URL secret to enable.
+      # Template works for both success and failure.
+      - name: Notify Slack
+        if: always() && vars.SLACK_NOTIFY == 'true'
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "${{ job.status == 'success' && '✅' || '❌' }} *Rally deploy — ${{ env.ENVIRONMENT }}*",
+              "blocks": [
+                {
+                  "type": "section",
+                  "fields": [
+                    { "type": "mrkdwn", "text": "*Environment:*\n`${{ env.ENVIRONMENT }}`" },
+                    { "type": "mrkdwn", "text": "*Tag:*\n`${{ env.IMAGE_TAG }}`" },
+                    { "type": "mrkdwn", "text": "*Status:*\n${{ job.status == 'success' && '✅ Success' || '❌ Failed' }}" },
+                    { "type": "mrkdwn", "text": "*Triggered by:*\n${{ github.actor }}" }
+                  ]
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": { "type": "plain_text", "text": "View run" },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
