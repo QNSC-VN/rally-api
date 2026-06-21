@@ -20,14 +20,16 @@ export const EnvSchema = z.object({
   REDIS_URL: z.string().default('redis://localhost:6379'),
   REDIS_KEY_PREFIX: z.string().default('rally:'),
 
-  // JWT — keys must be valid PEM blocks
+  // JWT — keys may be raw PEM or base64-encoded PEM
   JWT_PRIVATE_KEY: z
     .string()
     .min(1)
+    .transform((v) => (v.includes('-----BEGIN') ? v : Buffer.from(v, 'base64').toString('utf8')))
     .refine((v) => v.includes('-----BEGIN'), 'JWT_PRIVATE_KEY must be a PEM-encoded private key'),
   JWT_PUBLIC_KEY: z
     .string()
     .min(1)
+    .transform((v) => (v.includes('-----BEGIN') ? v : Buffer.from(v, 'base64').toString('utf8')))
     .refine((v) => v.includes('-----BEGIN'), 'JWT_PUBLIC_KEY must be a PEM-encoded public key'),
   JWT_ACCESS_EXPIRY: z.string().default('15m'),
   JWT_REFRESH_EXPIRY: z.string().default('30d'),

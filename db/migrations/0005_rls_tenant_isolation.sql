@@ -160,10 +160,15 @@ CREATE POLICY tenant_isolation ON work.labels
   WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', TRUE), '')::uuid);
 
 ALTER TABLE work.work_item_labels ENABLE ROW LEVEL SECURITY;
+-- work_item_labels is a junction table with no tenant_id;
+-- isolation is enforced through the parent work_items RLS policy (FK).
 CREATE POLICY tenant_isolation ON work.work_item_labels
   AS PERMISSIVE FOR ALL
-  USING  (tenant_id = NULLIF(current_setting('app.tenant_id', TRUE), '')::uuid)
-  WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', TRUE), '')::uuid);
+  USING (EXISTS (
+    SELECT 1 FROM work.work_items wi
+    WHERE wi.id = work_item_labels.work_item_id
+      AND wi.tenant_id = NULLIF(current_setting('app.tenant_id', TRUE), '')::uuid
+  ));
 
 ALTER TABLE work.teams ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON work.teams

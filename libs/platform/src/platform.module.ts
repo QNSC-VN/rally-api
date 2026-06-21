@@ -64,7 +64,6 @@ import { ResilienceModule } from './resilience/resilience.module';
   ],
   exports: [
     AppConfigModule,
-    AppConfigService,
     DatabaseModule,
     CacheModule,
     JwtModule,
