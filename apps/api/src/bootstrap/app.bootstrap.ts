@@ -41,6 +41,9 @@ export async function bootstrapApp(app: NestFastifyApplication): Promise<void> {
       'X-Correlation-Id',
       'X-CSRF-Token',
       'Idempotency-Key',
+      'traceparent',
+      'tracestate',
+      'baggage',
     ],
     exposedHeaders: ['X-Correlation-Id', 'RateLimit-Limit', 'RateLimit-Remaining', 'Retry-After'],
   });
