@@ -85,13 +85,7 @@ if (isEnabled) {
           // Completely skip health/metrics probes — no span created, no sampling needed.
           ignoreIncomingRequestHook: (req) => {
             const url = req.url ?? '';
-            return (
-              url === '/health' ||
-              url === '/health/liveness' ||
-              url === '/health/readiness' ||
-              url === '/metrics' ||
-              url === '/favicon.ico'
-            );
+            return url === '/v1/healthz' || url === '/favicon.ico';
           },
         },
         '@opentelemetry/instrumentation-pg': { enabled: true },
