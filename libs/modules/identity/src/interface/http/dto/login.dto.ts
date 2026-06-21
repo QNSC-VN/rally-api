@@ -4,6 +4,8 @@ import { z } from 'zod';
 export const LoginSchema = z.object({
   email: z.string().email('Must be a valid email address'),
   password: z.string().min(1, 'Password is required'),
+  // AUTH-FR: remember me affects session TTL (checked = 30d, unchecked = 24h)
+  rememberMe: z.boolean().optional().default(false),
 });
 
 export class LoginDto extends createZodDto(LoginSchema) {}

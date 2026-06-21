@@ -50,7 +50,12 @@ export class AuthService {
   // ---------------------------------------------------------------------------
 
   @Span('auth.login')
-  async login(email: string, password: string, ipAddress?: string): Promise<LoginResult> {
+  async login(
+    email: string,
+    password: string,
+    ipAddress?: string,
+    rememberMe = false,
+  ): Promise<LoginResult> {
     const user = await this.userRepo.findByEmail(email.toLowerCase().trim());
 
     // Use constant-time comparison to prevent user enumeration
@@ -78,8 +83,10 @@ export class AuthService {
     const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId);
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
 
+    // AUTH-FR: rememberMe = 30d session; not remembered = 24h session
+    const ttlSeconds = rememberMe ? this.refreshTtlSeconds() : 24 * 3600;
     const refreshExpiry = new Date();
-    refreshExpiry.setSeconds(refreshExpiry.getSeconds() + this.refreshTtlSeconds());
+    refreshExpiry.setSeconds(refreshExpiry.getSeconds() + ttlSeconds);
 
     await Promise.all([
       this.sessionRepo.create({

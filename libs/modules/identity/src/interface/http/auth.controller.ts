@@ -42,12 +42,14 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<AuthTokenResponseDto> {
-    const result = await this.authService.login(dto.email, dto.password, req.ip);
+    const result = await this.authService.login(dto.email, dto.password, req.ip, dto.rememberMe);
 
+    // Cookie TTL mirrors the session TTL: 30d if remembered, 24h otherwise
+    const cookieMaxAge = dto.rememberMe ? 30 * 24 * 60 * 60 : 24 * 60 * 60;
     reply.setCookie(REFRESH_COOKIE, result.refreshToken, {
       ...COOKIE_BASE,
       secure: process.env['NODE_ENV'] === 'production',
-      maxAge: 30 * 24 * 60 * 60,
+      maxAge: cookieMaxAge,
     });
 
     return {
