@@ -53,7 +53,12 @@ export const EnvSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
   OTEL_SERVICE_NAME: z.string().default('rally-api'),
+  OTEL_WORKER_SERVICE_NAME: z.string().default('rally-worker'),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().default('http://localhost:4318'),
+  /** 0.0–1.0 fraction of root spans to sample. Defaults: 1.0 dev, 0.1 prod. */
+  OTEL_SAMPLING_PROBABILITY: z.coerce.number().min(0).max(1).optional(),
+  /** Semver string injected into OTEL resource and Pino logs. */
+  SERVICE_VERSION: z.string().default('dev'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
 
   // Resilience

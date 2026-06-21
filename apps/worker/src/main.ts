@@ -1,5 +1,5 @@
-// Worker process: SQS consumers, outbox relay, cron scheduler
-// Shares all domain libs — no HTTP surface
+// OTel must be bootstrapped BEFORE any other imports so auto-instrumentation patches modules
+import { shutdownOtel } from './otel';
 
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
@@ -17,6 +17,35 @@ async function bootstrap(): Promise<void> {
 
   const logger = app.get(Logger);
   logger.log('Worker process started', 'Bootstrap');
+
+  const shutdown = async (signal: string): Promise<void> => {
+    logger.log(`Received ${signal} — shutting down worker…`, 'Bootstrap');
+    try {
+      await shutdownOtel();
+      await app.close();
+      logger.log('Worker shutdown complete', 'Bootstrap');
+    } catch (err) {
+      logger.error({ msg: 'Error during worker shutdown', err }, 'Bootstrap');
+    } finally {
+      process.exit(0);
+    }
+  };
+
+  process.on('SIGTERM', () => {
+    void shutdown('SIGTERM');
+  });
+  process.on('SIGINT', () => {
+    void shutdown('SIGINT');
+  });
+
+  process.on('unhandledRejection', (reason: unknown) => {
+    logger.error({ msg: 'Unhandled promise rejection', reason }, 'Bootstrap');
+  });
+
+  process.on('uncaughtException', (error: Error) => {
+    logger.error({ msg: 'Uncaught exception', error }, 'Bootstrap');
+    process.exit(1);
+  });
 }
 
 void bootstrap();

@@ -1,5 +1,5 @@
 // OTel must be bootstrapped BEFORE any other imports so auto-instrumentation patches modules
-import './otel';
+import { shutdownOtel } from './otel';
 
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
@@ -36,6 +36,8 @@ async function bootstrap(): Promise<void> {
   const shutdown = async (signal: string): Promise<void> => {
     logger.log(`Received ${signal} — shutting down gracefully…`, 'Bootstrap');
     try {
+      // Flush and shut down OTEL before NestJS closes (drains pending spans)
+      await shutdownOtel();
       await app.close();
       logger.log('Shutdown complete', 'Bootstrap');
     } catch (err) {
@@ -45,8 +47,12 @@ async function bootstrap(): Promise<void> {
     }
   };
 
-  process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
-  process.on('SIGINT',  () => { void shutdown('SIGINT'); });
+  process.on('SIGTERM', () => {
+    void shutdown('SIGTERM');
+  });
+  process.on('SIGINT', () => {
+    void shutdown('SIGINT');
+  });
 
   // Log unhandled rejections without crashing (they surface via normal paths)
   process.on('unhandledRejection', (reason: unknown) => {

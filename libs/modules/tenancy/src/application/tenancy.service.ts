@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
   PreconditionFailedException,
   AppConfigService,
+  Span,
 } from '@platform';
 import type { JwtPayload, CursorPayload, PagedResult } from '@platform';
 import { ITenantRepository, TENANT_REPOSITORY } from '../domain/ports/tenant.repository';
@@ -71,6 +72,7 @@ export class TenancyService {
     return this.workspaceRepo.listByTenant(tenantId, args);
   }
 
+  @Span('tenancy.createWorkspace')
   async createWorkspace(
     actor: JwtPayload,
     slug: string,
@@ -144,6 +146,7 @@ export class TenancyService {
     return this.memberRepo.listMembers(workspaceId, args);
   }
 
+  @Span('tenancy.addMember')
   async addMember(
     tenantId: string,
     workspaceId: string,
@@ -226,8 +229,7 @@ export class TenancyService {
   }
 
   // ── Invitations ─────────────────────────────────────────────────────────────
-
-  async inviteMember(
+  @Span('tenancy.inviteMember') async inviteMember(
     tenantId: string,
     workspaceId: string,
     email: string,
@@ -292,6 +294,7 @@ export class TenancyService {
     this.logger.log({ invitationId, actorId }, 'Invitation cancelled');
   }
 
+  @Span('tenancy.acceptInvitation')
   async acceptInvitation(rawToken: string, acceptingUserId: string): Promise<void> {
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
     const invitation = await this.invitationRepo.findByTokenHash(tokenHash);

@@ -13,7 +13,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { Cron } from '@nestjs/schedule';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { and, asc, lt, eq } from 'drizzle-orm';
-import { InjectDrizzle, AppConfigService } from '@platform';
+import { InjectDrizzle, AppConfigService, Span } from '@platform';
 import type { DrizzleDB } from '@platform';
 import { outboxEvents } from '../../../../db/schema/messaging';
 
@@ -57,6 +57,7 @@ export class OutboxRelayService implements OnModuleInit, OnModuleDestroy {
 
   /** Runs every 5 seconds. */
   @Cron('*/5 * * * * *', { name: 'outbox-relay' })
+  @Span('outbox.relay')
   async relay(): Promise<void> {
     if (this.isRelaying) {
       this.logger.warn('Previous relay run still in progress — skipping tick');

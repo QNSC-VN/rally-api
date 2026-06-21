@@ -2,6 +2,8 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { ConfigService } from '@nestjs/config';
+import { trace, isSpanContextValid } from '@opentelemetry/api';
+import { requestContextStorage } from '@platform/context/request-context';
 import { PlatformModule } from '@platform';
 import { IdentityModule } from '@modules/identity';
 import { TenancyModule } from '@modules/tenancy';
@@ -48,7 +50,34 @@ import { AsyncLocalStorageMiddleware } from '@platform/context/als.middleware';
             },
             // HttpLoggingInterceptor emits the per-request summary line
             autoLogging: false,
-            customProps: () => ({ service: 'rally-api' }),
+            customProps: () => ({
+              service: 'rally-api',
+            }),
+            // mixin: called on every log write — injects active OTEL trace context
+            // and ALS request context (tenantId, userId, correlationId) automatically.
+            mixin: () => {
+              const result: Record<string, unknown> = {};
+
+              // Trace-log correlation: link this log line to the active OTEL span
+              const span = trace.getActiveSpan();
+              if (span) {
+                const ctx = span.spanContext();
+                if (isSpanContextValid(ctx)) {
+                  result['trace.id'] = ctx.traceId;
+                  result['span.id'] = ctx.spanId;
+                }
+              }
+
+              // Request context: tenantId / userId / correlationId from ALS
+              const reqCtx = requestContextStorage.getStore();
+              if (reqCtx) {
+                if (reqCtx.tenantId) result['tenantId'] = reqCtx.tenantId;
+                if (reqCtx.userId) result['userId'] = reqCtx.userId;
+                if (reqCtx.correlationId) result['correlationId'] = reqCtx.correlationId;
+              }
+
+              return result;
+            },
           },
         };
       },

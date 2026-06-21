@@ -8,6 +8,7 @@ import {
   ValkeyService,
   UnauthorizedException,
   NotFoundException,
+  Span,
 } from '@platform';
 import type { JwtPayload } from '@platform';
 import { IUserRepository, USER_REPOSITORY } from '../domain/ports/user.repository';
@@ -46,6 +47,7 @@ export class AuthService {
   // Login
   // ---------------------------------------------------------------------------
 
+  @Span('auth.login')
   async login(email: string, password: string, ipAddress?: string): Promise<LoginResult> {
     const user = await this.userRepo.findByEmail(email.toLowerCase().trim());
 
@@ -111,6 +113,7 @@ export class AuthService {
   // Refresh
   // ---------------------------------------------------------------------------
 
+  @Span('auth.refresh')
   async refresh(rawRefreshToken: string, ipAddress?: string): Promise<RefreshResult> {
     const tokenHash = this.hashToken(rawRefreshToken);
     const session = await this.sessionRepo.findByTokenHash(tokenHash);
@@ -166,6 +169,7 @@ export class AuthService {
   // Logout
   // ---------------------------------------------------------------------------
 
+  @Span('auth.logout')
   async logout(payload: JwtPayload): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
     const ttl = Math.max(payload.exp - now, 0);
@@ -196,6 +200,7 @@ export class AuthService {
   // Change password
   // ---------------------------------------------------------------------------
 
+  @Span('auth.changePassword')
   async changePassword(
     userId: string,
     currentPassword: string,
@@ -293,6 +298,7 @@ export class AuthService {
   // Logout all devices
   // ---------------------------------------------------------------------------
 
+  @Span('auth.logoutAll')
   async logoutAll(payload: JwtPayload): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
     const ttl = Math.max(payload.exp - now, 0);
@@ -309,6 +315,7 @@ export class AuthService {
   // Forgot password
   // ---------------------------------------------------------------------------
 
+  @Span('auth.forgotPassword')
   async forgotPassword(email: string): Promise<void> {
     // Always return success to prevent user enumeration (AUTH-FR-007)
     const user = await this.userRepo.findByEmail(email.toLowerCase().trim());
@@ -335,6 +342,7 @@ export class AuthService {
   // Reset password
   // ---------------------------------------------------------------------------
 
+  @Span('auth.resetPassword')
   async resetPassword(rawToken: string, newPassword: string): Promise<void> {
     const tokenHash = this.hashToken(rawToken);
     const record = await this.userRepo.findPasswordResetToken(tokenHash);

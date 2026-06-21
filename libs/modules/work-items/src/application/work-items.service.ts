@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
-import { NotFoundException, PreconditionFailedException } from '@platform';
+import { NotFoundException, PreconditionFailedException, Span } from '@platform';
 import type { JwtPayload, CursorPayload, PagedResult } from '@platform';
 import { ProjectsService } from '@modules/projects';
 import { IWorkItemRepository, WORK_ITEM_REPOSITORY } from '../domain/ports/work-item.repository';
@@ -35,6 +35,7 @@ export class WorkItemsService {
 
   // ── Create ────────────────────────────────────────────────────────────────
 
+  @Span('work-items.create')
   async createWorkItem(
     actor: JwtPayload,
     projectId: string,
@@ -116,6 +117,7 @@ export class WorkItemsService {
 
   // ── Update ────────────────────────────────────────────────────────────────
 
+  @Span('work-items.update')
   async updateWorkItem(
     tenantId: string,
     id: string,
@@ -137,6 +139,7 @@ export class WorkItemsService {
 
   // ── Delete ────────────────────────────────────────────────────────────────
 
+  @Span('work-items.delete')
   async deleteWorkItem(tenantId: string, id: string): Promise<void> {
     await this.getWorkItem(tenantId, id);
     await this.workItemRepo.softDelete(id);
@@ -145,6 +148,7 @@ export class WorkItemsService {
 
   // ── Move (board transition) ───────────────────────────────────────────────
 
+  @Span('work-items.move')
   async moveWorkItem(tenantId: string, id: string, toStatusId: string): Promise<WorkItem> {
     const item = await this.getWorkItem(tenantId, id);
     await this.projectsService.assertTransitionAllowed(item.projectId, item.statusId, toStatusId);

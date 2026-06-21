@@ -10,7 +10,13 @@ export interface RequestContext {
   traceparent: string | undefined;
 }
 
-const als = new AsyncLocalStorage<RequestContext>();
+/**
+ * Exported so the Pino mixin can read request context without going through DI.
+ * Do NOT write to this directly — use RequestContextService.
+ */
+export const requestContextStorage = new AsyncLocalStorage<RequestContext>();
+
+const als = requestContextStorage;
 
 @Injectable()
 export class RequestContextService {
