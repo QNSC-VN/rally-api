@@ -75,7 +75,6 @@ import { ResilienceModule } from './resilience/resilience.module';
     RequestContextService,
     JwtAuthGuard,
     PermissionGuard,
-    RateLimitGuard,
     OutboxService,
     TenantRlsService,
     EmailService,

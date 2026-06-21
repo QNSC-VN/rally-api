@@ -53,7 +53,7 @@ async function seed() {
       id: WORKSPACE_ID,
       tenantId: SYSTEM_TENANT_ID,
       slug: 'main',
-      name: 'Main Workspace',
+      name: 'ACME Corp',
     })
     .onConflictDoNothing();
 

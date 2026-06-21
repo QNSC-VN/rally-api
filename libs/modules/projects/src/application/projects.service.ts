@@ -70,6 +70,9 @@ export class ProjectsService {
       );
     }
 
+    // PRJ-FR-002/006: owner is required; default to the authenticated actor
+    const resolvedLeadId = leadId ?? actor.sub;
+
     const projectId = uuidv7();
     const project = await this.projectRepo.create({
       id: projectId,
@@ -78,12 +81,18 @@ export class ProjectsService {
       key: normalizedKey,
       name,
       description,
-      leadId,
+      leadId: resolvedLeadId,
     });
 
-    // Seed default workflow statuses + counter in parallel
+    // PRJ-FR-003: atomically seed workflow statuses, counter, and owner membership
     await Promise.all([
       this.projectRepo.initCounter(projectId, actor.tenantId),
+      this.projectMemberRepo.addMember({
+        id: uuidv7(),
+        tenantId: actor.tenantId,
+        projectId,
+        userId: resolvedLeadId,
+      }),
       ...DEFAULT_WORKFLOW_STATUSES.map((s) =>
         this.statusRepo.create({
           id: uuidv7(),
@@ -98,7 +107,10 @@ export class ProjectsService {
       ),
     ]);
 
-    this.logger.log({ projectId, key: normalizedKey, userId: actor.sub }, 'Project created');
+    this.logger.log(
+      { projectId, key: normalizedKey, leadId: resolvedLeadId, userId: actor.sub },
+      'Project created',
+    );
     return project;
   }
 
