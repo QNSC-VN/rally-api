@@ -33,14 +33,14 @@ import { ResilienceModule } from './resilience/resilience.module';
         privateKey: config.get('JWT_PRIVATE_KEY'),
         publicKey: config.get('JWT_PUBLIC_KEY'),
         signOptions: {
-          algorithm: 'EdDSA' as Algorithm,
+          algorithm: 'ES256' as Algorithm,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           expiresIn: config.get('JWT_ACCESS_EXPIRY') as any,
           issuer: config.get('JWT_ISSUER'),
           audience: config.get('JWT_AUDIENCE'),
         },
         verifyOptions: {
-          algorithms: ['EdDSA', 'RS256'] as Algorithm[],
+          algorithms: ['ES256'] as Algorithm[],
           issuer: config.get('JWT_ISSUER'),
           audience: config.get('JWT_AUDIENCE'),
         },
