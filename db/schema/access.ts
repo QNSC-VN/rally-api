@@ -13,6 +13,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { scopeTypeEnum } from './enums';
 
 export const accessSchema = pgSchema('access');
 
@@ -20,7 +21,7 @@ export const systemRoles = accessSchema.table(
   'system_roles',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    tenantId: uuid('tenant_id'),   // NULL = global system role
+    tenantId: uuid('tenant_id'), // NULL = global system role
     name: varchar('name', { length: 100 }).notNull(),
     slug: varchar('slug', { length: 100 }).notNull(),
     description: text('description'),
@@ -41,8 +42,8 @@ export const userRoleAssignments = accessSchema.table(
     tenantId: uuid('tenant_id').notNull(),
     userId: uuid('user_id').notNull(),
     roleId: uuid('role_id').notNull(),
-    scopeType: varchar('scope_type', { length: 30 }).notNull(),  // 'workspace' | 'project' | 'global'
-    scopeId: uuid('scope_id'),                                    // NULL for global scope
+    scopeType: scopeTypeEnum('scope_type').notNull(),
+    scopeId: uuid('scope_id'), // NULL for global scope
     grantedBy: uuid('granted_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

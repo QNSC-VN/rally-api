@@ -1,5 +1,9 @@
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
+import {
+  projectStatusEnum,
+  workflowStatusCategoryEnum,
+} from '../../../../../../../db/schema/enums';
 
 export const ProjectResponseSchema = z.object({
   id: z.string().uuid(),
@@ -9,7 +13,7 @@ export const ProjectResponseSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   leadId: z.string().uuid().nullable(),
-  status: z.string().describe('Project status: active | archived'),
+  status: z.enum(projectStatusEnum.enumValues).describe('Project status: active | archived'),
   settings: z.record(z.string(), z.unknown()),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -21,7 +25,7 @@ export const WorkflowStatusResponseSchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
   name: z.string(),
-  category: z.enum(['to_do', 'in_progress', 'done']),
+  category: z.enum(workflowStatusCategoryEnum.enumValues),
   color: z.string().nullable(),
   position: z.number().int(),
   isDefault: z.boolean(),

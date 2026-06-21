@@ -4,7 +4,7 @@ import { uuidv7 } from 'uuidv7';
 import { InjectDrizzle } from '@platform';
 import type { DrizzleDB } from '@platform';
 import { users, passwordResetTokens } from '../../../../../../db/schema/identity';
-import type { User } from '../../domain/user.types';
+import type { User, UserStatus } from '../../domain/user.types';
 import { IUserRepository } from '../../domain/ports/user.repository';
 
 @Injectable()
@@ -40,7 +40,7 @@ export class UserDrizzleRepository implements IUserRepository {
       .where(eq(users.id, id));
   }
 
-  async updateStatus(id: string, status: string): Promise<void> {
+  async updateStatus(id: string, status: UserStatus): Promise<void> {
     await this.db.update(users).set({ status, updatedAt: new Date() }).where(eq(users.id, id));
   }
 

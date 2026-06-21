@@ -1,4 +1,5 @@
-export type SprintStatus = 'planned' | 'active' | 'completed';
+import type { SprintStatus } from '../../../../../db/schema/enums';
+export type { SprintStatus };
 
 export interface Sprint {
   id: string;

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { workspaceMemberStatusEnum } from '../../../../../../../db/schema/enums';
 
 // ── Create Workspace ─────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ export class AddMemberDto extends createZodDto(AddMemberSchema) {}
 
 export const UpdateMemberSchema = z.object({
   roleId: z.string().min(1).max(100).optional(),
-  status: z.enum(['active', 'suspended', 'removed']).optional(),
+  status: z.enum(workspaceMemberStatusEnum.enumValues).optional(),
 });
 
 export class UpdateMemberDto extends createZodDto(UpdateMemberSchema) {}

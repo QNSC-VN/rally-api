@@ -27,21 +27,8 @@ import type {
   CreateWorkflowTransitionInput,
   UpdateProjectMemberInput,
 } from '../domain/project.types';
+import { DEFAULT_WORKFLOW_STATUSES } from '../domain/project.constants';
 import type { Label } from '../domain/label.types';
-
-/** Default workflow statuses seeded for every new project (mirrors Rally defaults). */
-const DEFAULT_STATUSES: Array<{
-  name: string;
-  category: 'to_do' | 'in_progress' | 'done';
-  color: string;
-  position: number;
-  isDefault: boolean;
-}> = [
-  { name: 'Defined', category: 'to_do', color: '#6B7280', position: 0, isDefault: true },
-  { name: 'In Progress', category: 'in_progress', color: '#3B82F6', position: 1, isDefault: false },
-  { name: 'Completed', category: 'done', color: '#10B981', position: 2, isDefault: false },
-  { name: 'Accepted', category: 'done', color: '#059669', position: 3, isDefault: false },
-];
 
 @Injectable()
 export class ProjectsService {
@@ -97,7 +84,7 @@ export class ProjectsService {
     // Seed default workflow statuses + counter in parallel
     await Promise.all([
       this.projectRepo.initCounter(projectId, actor.tenantId),
-      ...DEFAULT_STATUSES.map((s) =>
+      ...DEFAULT_WORKFLOW_STATUSES.map((s) =>
         this.statusRepo.create({
           id: uuidv7(),
           tenantId: actor.tenantId,

@@ -2,6 +2,8 @@
  * Lightweight domain types for the identity bounded context.
  * Mirror the DB schema shape — no ORM dependency in the domain.
  */
+import type { UserStatus } from '../../../../../db/schema/enums';
+export type { UserStatus };
 
 export interface User {
   id: string;
@@ -10,7 +12,7 @@ export interface User {
   displayName: string;
   avatarUrl: string | null;
   passwordHash: string | null;
-  status: string; // invited | active | inactive | suspended
+  status: UserStatus;
   emailVerified: boolean;
   locale: string;
   timezone: string;

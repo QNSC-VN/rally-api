@@ -3,7 +3,11 @@ import { and, eq, gt } from 'drizzle-orm';
 import { InjectDrizzle } from '@platform';
 import type { DrizzleDB } from '@platform';
 import { workspaceInvitations } from '../../../../../../db/schema/tenancy';
-import type { WorkspaceInvitation, CreateInvitationInput } from '../../domain/tenancy.types';
+import type {
+  WorkspaceInvitation,
+  CreateInvitationInput,
+  InvitationStatus,
+} from '../../domain/tenancy.types';
 import { IWorkspaceInvitationRepository } from '../../domain/ports/workspace-invitation.repository';
 
 @Injectable()
@@ -76,7 +80,7 @@ export class WorkspaceInvitationDrizzleRepository implements IWorkspaceInvitatio
     return rows[0] as WorkspaceInvitation;
   }
 
-  async updateStatus(id: string, status: string, acceptedBy?: string): Promise<void> {
+  async updateStatus(id: string, status: InvitationStatus, acceptedBy?: string): Promise<void> {
     await this.db
       .update(workspaceInvitations)
       .set({

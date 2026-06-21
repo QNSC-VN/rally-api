@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
 import { PageQuerySchema } from '@platform';
+import { workItemTypeEnum, workItemPriorityEnum } from '../../../../../../../db/schema/enums';
 
-const WORK_ITEM_TYPES = ['initiative', 'feature', 'story', 'task', 'defect'] as const;
-const WORK_ITEM_PRIORITIES = ['critical', 'high', 'medium', 'low'] as const;
+const WORK_ITEM_TYPES = workItemTypeEnum.enumValues;
+const WORK_ITEM_PRIORITIES = workItemPriorityEnum.enumValues;
 
 // ── List query ────────────────────────────────────────────────────────────────
 

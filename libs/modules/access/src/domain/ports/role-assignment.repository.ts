@@ -1,4 +1,4 @@
-import type { UserRoleAssignment, AssignRoleInput } from '../access.types';
+import type { UserRoleAssignment, AssignRoleInput, ScopeType } from '../access.types';
 
 export const ROLE_ASSIGNMENT_REPOSITORY = Symbol('ROLE_ASSIGNMENT_REPOSITORY');
 
@@ -7,7 +7,7 @@ export interface IRoleAssignmentRepository {
   findExisting(
     userId: string,
     roleId: string,
-    scopeType: string,
+    scopeType: ScopeType,
     scopeId: string | null,
   ): Promise<UserRoleAssignment | null>;
   listForUser(tenantId: string, userId: string): Promise<UserRoleAssignment[]>;

@@ -13,6 +13,7 @@ import {
   index,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import { outboxStatusEnum } from './enums';
 
 export const messagingSchema = pgSchema('messaging');
 
@@ -28,7 +29,7 @@ export const outboxEvents = messagingSchema.table(
     tenantId: uuid('tenant_id').notNull(),
     payload: jsonb('payload').notNull(),
     occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
-    status: varchar('status', { length: 20 }).notNull().default('pending'),  // pending|published|failed
+    status: outboxStatusEnum('status').notNull().default('pending'),
     attempts: integer('attempts').notNull().default(0),
     lastError: text('last_error'),
     publishedAt: timestamp('published_at', { withTimezone: true }),
@@ -37,7 +38,9 @@ export const outboxEvents = messagingSchema.table(
     partitionKey: timestamp('partition_key', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    statusIdx: index('ix_outbox_status').on(t.status, t.createdAt).where(sql`status = 'pending'`),
+    statusIdx: index('ix_outbox_status')
+      .on(t.status, t.createdAt)
+      .where(sql`status = 'pending'`),
     tenantIdx: index('ix_outbox_tenant').on(t.tenantId),
     eventIdIdx: index('ix_outbox_event_id').on(t.eventId),
   }),

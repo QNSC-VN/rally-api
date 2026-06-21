@@ -43,6 +43,13 @@
       "when": 1782100000000,
       "tag": "0005_rls_tenant_isolation",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782052333616,
+      "tag": "0006_enum_columns",
+      "breakpoints": true
     }
   ]
 }

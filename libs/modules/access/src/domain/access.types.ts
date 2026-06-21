@@ -1,4 +1,5 @@
-export type ScopeType = 'global' | 'workspace' | 'project';
+import type { ScopeType } from '../../../../../db/schema/enums';
+export type { ScopeType };
 
 export interface SystemRole {
   id: string;

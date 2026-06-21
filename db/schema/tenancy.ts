@@ -13,6 +13,13 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import {
+  tenantStatusEnum,
+  subscriptionPlanEnum,
+  subscriptionStatusEnum,
+  workspaceMemberStatusEnum,
+  invitationStatusEnum,
+} from './enums';
 
 export const tenancySchema = pgSchema('tenancy');
 
@@ -24,8 +31,8 @@ export const tenants = tenancySchema.table(
     id: uuid('id').primaryKey().defaultRandom(),
     slug: varchar('slug', { length: 63 }).notNull(),
     name: varchar('name', { length: 255 }).notNull(),
-    status: varchar('status', { length: 20 }).notNull().default('active'),
-    plan: varchar('plan', { length: 50 }).notNull().default('free'),
+    status: tenantStatusEnum('status').notNull().default('active'),
+    plan: subscriptionPlanEnum('plan').notNull().default('free'),
     settings: jsonb('settings').notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -73,7 +80,7 @@ export const workspaceMembers = tenancySchema.table(
     workspaceId: uuid('workspace_id').notNull(),
     userId: uuid('user_id').notNull(),
     roleId: uuid('role_id'),
-    status: varchar('status', { length: 20 }).notNull().default('active'), // active|suspended|removed
+    status: workspaceMemberStatusEnum('status').notNull().default('active'),
     joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -97,7 +104,7 @@ export const workspaceInvitations = tenancySchema.table(
     email: varchar('email', { length: 320 }).notNull(),
     roleId: uuid('role_id'),
     tokenHash: text('token_hash').notNull(),
-    status: varchar('status', { length: 20 }).notNull().default('pending'), // pending|accepted|cancelled|expired
+    status: invitationStatusEnum('status').notNull().default('pending'),
     invitedBy: uuid('invited_by').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     acceptedBy: uuid('accepted_by'),
@@ -139,8 +146,8 @@ export const subscriptions = tenancySchema.table(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     tenantId: uuid('tenant_id').notNull(),
-    plan: varchar('plan', { length: 50 }).notNull().default('free'),
-    status: varchar('status', { length: 20 }).notNull().default('active'),
+    plan: subscriptionPlanEnum('plan').notNull().default('free'),
+    status: subscriptionStatusEnum('status').notNull().default('active'),
     seatLimit: integer('seat_limit'),
     currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
     externalSubscriptionId: varchar('external_subscription_id', { length: 255 }),
@@ -152,5 +159,4 @@ export const subscriptions = tenancySchema.table(
   }),
 );
 
-// sql tag — required for partial index WHERE clauses in Drizzle
 import { sql } from 'drizzle-orm';

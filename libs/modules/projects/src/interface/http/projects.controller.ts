@@ -21,6 +21,7 @@ import {
   ProjectQueryDto,
   CreateLabelDto,
   UpdateLabelDto,
+  UpdateProjectMemberDto,
 } from './dto/project-request.dto';
 import {
   ProjectResponseDto,
@@ -333,7 +334,7 @@ export class ProjectsController {
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseUUIDPipe) id: string,
     @Param('memberId', ParseUUIDPipe) memberId: string,
-    @Body() dto: { roleId?: string; status?: string },
+    @Body() dto: UpdateProjectMemberDto,
   ) {
     return this.projectsService.updateProjectMember(user.tenantId, id, memberId, dto);
   }

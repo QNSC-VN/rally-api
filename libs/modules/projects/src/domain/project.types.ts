@@ -1,3 +1,11 @@
+import type {
+  WorkflowStatusCategory,
+  ProjectStatus,
+  ProjectTeamStatus,
+  ProjectMemberStatus,
+} from '../../../../../db/schema/enums';
+export type { WorkflowStatusCategory, ProjectStatus, ProjectTeamStatus, ProjectMemberStatus };
+
 export interface Project {
   id: string;
   tenantId: string;
@@ -6,7 +14,7 @@ export interface Project {
   name: string;
   description: string | null;
   leadId: string | null;
-  status: string;
+  status: ProjectStatus;
   settings: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
@@ -18,7 +26,7 @@ export interface WorkflowStatus {
   tenantId: string;
   projectId: string;
   name: string;
-  category: 'to_do' | 'in_progress' | 'done';
+  category: WorkflowStatusCategory;
   color: string | null;
   position: number;
   isDefault: boolean;
@@ -50,7 +58,7 @@ export interface UpdateProjectInput {
   name?: string;
   description?: string | null;
   leadId?: string | null;
-  status?: string;
+  status?: ProjectStatus;
   settings?: Record<string, unknown>;
 }
 
@@ -59,7 +67,7 @@ export interface CreateWorkflowStatusInput {
   tenantId: string;
   projectId: string;
   name: string;
-  category: 'to_do' | 'in_progress' | 'done';
+  category: WorkflowStatusCategory;
   color?: string;
   position: number;
   isDefault?: boolean;
@@ -79,7 +87,7 @@ export interface ProjectTeamLink {
   tenantId: string;
   projectId: string;
   teamId: string;
-  status: string; // active | unlinked
+  status: ProjectTeamStatus;
   linkedAt: Date;
   unlinkedAt: Date | null;
 }
@@ -90,7 +98,7 @@ export interface ProjectMember {
   projectId: string;
   userId: string;
   roleId: string | null;
-  status: string; // active | removed
+  status: ProjectMemberStatus;
   joinedAt: Date;
   updatedAt: Date;
 }
@@ -105,5 +113,5 @@ export interface AddProjectMemberInput {
 
 export interface UpdateProjectMemberInput {
   roleId?: string;
-  status?: string;
+  status?: ProjectMemberStatus;
 }

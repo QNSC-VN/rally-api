@@ -1,4 +1,5 @@
-export type ReleaseStatus = 'planned' | 'released';
+import type { ReleaseStatus } from '../../../../../db/schema/enums';
+export type { ReleaseStatus };
 
 export interface Release {
   id: string;

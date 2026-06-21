@@ -1,3 +1,6 @@
+import type { TeamStatus, TeamMemberStatus } from '../../../../../db/schema/enums';
+export type { TeamStatus, TeamMemberStatus };
+
 export interface Team {
   id: string;
   tenantId: string;
@@ -6,7 +9,7 @@ export interface Team {
   key: string;
   description: string | null;
   leadId: string | null;
-  status: string; // active | archived
+  status: TeamStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -16,7 +19,7 @@ export interface TeamMember {
   tenantId: string;
   teamId: string;
   userId: string;
-  status: string; // active | removed
+  status: TeamMemberStatus;
   joinedAt: Date;
 }
 
@@ -34,5 +37,5 @@ export interface UpdateTeamInput {
   name?: string;
   description?: string | null;
   leadId?: string | null;
-  status?: string;
+  status?: TeamStatus;
 }

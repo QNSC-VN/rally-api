@@ -14,6 +14,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { userStatusEnum } from './enums';
 
 export const identitySchema = pgSchema('identity');
 
@@ -28,7 +29,7 @@ export const users = identitySchema.table(
     displayName: varchar('display_name', { length: 255 }).notNull(),
     avatarUrl: varchar('avatar_url', { length: 2048 }),
     passwordHash: text('password_hash'),
-    status: varchar('status', { length: 20 }).notNull().default('active'), // invited|active|inactive|suspended
+    status: userStatusEnum('status').notNull().default('active'),
     emailVerified: boolean('email_verified').notNull().default(false),
     mfaEnabled: boolean('mfa_enabled').notNull().default(false),
     mfaSecret: text('mfa_secret'),

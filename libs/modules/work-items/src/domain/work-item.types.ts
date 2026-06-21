@@ -1,5 +1,5 @@
-export type WorkItemType = 'initiative' | 'feature' | 'story' | 'task' | 'defect';
-export type WorkItemPriority = 'critical' | 'high' | 'medium' | 'low';
+import type { WorkItemType, WorkItemPriority } from '../../../../../db/schema/enums';
+export type { WorkItemType, WorkItemPriority };
 
 export interface WorkItem {
   id: string;

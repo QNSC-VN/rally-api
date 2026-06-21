@@ -6,6 +6,9 @@
  * corresponding subdirectory. Add new schema files here as they are created.
  */
 
+// ── shared enums (must be first — tables import from here) ────────────────
+export * from './enums';
+
 // ── tenancy schema ─────────────────────────────────────────────────────────
 export * from './tenancy';
 

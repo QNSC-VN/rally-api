@@ -20,6 +20,18 @@ import {
   primaryKey,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+import {
+  projectStatusEnum,
+  projectMemberStatusEnum,
+  projectTeamStatusEnum,
+  workItemTypeEnum,
+  workItemPriorityEnum,
+  workflowStatusCategoryEnum,
+  sprintStatusEnum,
+  releaseStatusEnum,
+  teamStatusEnum,
+  teamMemberStatusEnum,
+} from './enums';
 
 export const workSchema = pgSchema('work');
 
@@ -35,7 +47,7 @@ export const projects = workSchema.table(
     name: varchar('name', { length: 255 }).notNull(),
     description: text('description'),
     leadId: uuid('lead_id'),
-    status: varchar('status', { length: 20 }).notNull().default('active'),
+    status: projectStatusEnum('status').notNull().default('active'),
     settings: jsonb('settings').notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -68,11 +80,11 @@ export const workItems = workSchema.table(
     tenantId: uuid('tenant_id').notNull(),
     projectId: uuid('project_id').notNull(),
     itemKey: varchar('item_key', { length: 30 }).notNull(),
-    type: varchar('type', { length: 20 }).notNull(), // CHECK: initiative|feature|story|task|defect
+    type: workItemTypeEnum('type').notNull(),
     title: varchar('title', { length: 500 }).notNull(),
     description: text('description'),
     statusId: uuid('status_id').notNull(),
-    priority: varchar('priority', { length: 20 }).notNull().default('medium'),
+    priority: workItemPriorityEnum('priority').notNull().default('medium'),
     assigneeId: uuid('assignee_id'),
     reporterId: uuid('reporter_id'),
     parentId: uuid('parent_id'),
@@ -114,7 +126,7 @@ export const workflowStatuses = workSchema.table(
     tenantId: uuid('tenant_id').notNull(),
     projectId: uuid('project_id').notNull(),
     name: varchar('name', { length: 100 }).notNull(),
-    category: varchar('category', { length: 20 }).notNull(), // to_do | in_progress | done
+    category: workflowStatusCategoryEnum('category').notNull(),
     color: varchar('color', { length: 20 }),
     position: integer('position').notNull().default(0),
     isDefault: boolean('is_default').notNull().default(false),
@@ -156,7 +168,7 @@ export const sprints = workSchema.table(
     projectId: uuid('project_id').notNull(),
     name: varchar('name', { length: 255 }).notNull(),
     goal: text('goal'),
-    status: varchar('status', { length: 20 }).notNull().default('planned'), // planned|active|completed
+    status: sprintStatusEnum('status').notNull().default('planned'),
     startDate: date('start_date'),
     endDate: date('end_date'),
     completedAt: timestamp('completed_at', { withTimezone: true }),
@@ -205,7 +217,7 @@ export const releases = workSchema.table(
     projectId: uuid('project_id').notNull(),
     name: varchar('name', { length: 255 }).notNull(),
     description: text('description'),
-    status: varchar('status', { length: 20 }).notNull().default('planned'),
+    status: releaseStatusEnum('status').notNull().default('planned'),
     targetDate: date('target_date'),
     releasedAt: timestamp('released_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -312,7 +324,7 @@ export const teams = workSchema.table(
     key: varchar('key', { length: 10 }).notNull(),
     description: text('description'),
     leadId: uuid('lead_id'),
-    status: varchar('status', { length: 20 }).notNull().default('active'), // active|archived
+    status: teamStatusEnum('status').notNull().default('active'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -332,7 +344,7 @@ export const teamMembers = workSchema.table(
     tenantId: uuid('tenant_id').notNull(),
     teamId: uuid('team_id').notNull(),
     userId: uuid('user_id').notNull(),
-    status: varchar('status', { length: 20 }).notNull().default('active'), // active|removed
+    status: teamMemberStatusEnum('status').notNull().default('active'),
     joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -352,7 +364,7 @@ export const projectTeams = workSchema.table(
     tenantId: uuid('tenant_id').notNull(),
     projectId: uuid('project_id').notNull(),
     teamId: uuid('team_id').notNull(),
-    status: varchar('status', { length: 20 }).notNull().default('active'), // active|unlinked
+    status: projectTeamStatusEnum('status').notNull().default('active'),
     linkedAt: timestamp('linked_at', { withTimezone: true }).notNull().defaultNow(),
     unlinkedAt: timestamp('unlinked_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -374,7 +386,7 @@ export const projectMembers = workSchema.table(
     projectId: uuid('project_id').notNull(),
     userId: uuid('user_id').notNull(),
     roleId: uuid('role_id'),
-    status: varchar('status', { length: 20 }).notNull().default('active'), // active|removed
+    status: projectMemberStatusEnum('status').notNull().default('active'),
     joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

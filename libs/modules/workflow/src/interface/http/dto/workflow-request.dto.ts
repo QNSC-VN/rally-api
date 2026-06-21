@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { workflowStatusCategoryEnum } from '../../../../../../../db/schema/enums';
 
 export const CreateWorkflowStatusSchema = z.object({
   name: z.string().min(1).max(100),
-  category: z.enum(['to_do', 'in_progress', 'done']),
+  category: z.enum(workflowStatusCategoryEnum.enumValues),
   color: z.string().max(20).optional(),
   position: z.number().int().min(0).optional(),
   isDefault: z.boolean().optional(),

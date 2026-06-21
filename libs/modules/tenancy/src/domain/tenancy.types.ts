@@ -1,9 +1,26 @@
+import type {
+  TenantStatus,
+  SubscriptionPlan,
+  WorkspaceMemberStatus,
+  InvitationStatus,
+  TeamStatus,
+  TeamMemberStatus,
+} from '../../../../../db/schema/enums';
+export type {
+  TenantStatus,
+  SubscriptionPlan,
+  WorkspaceMemberStatus,
+  InvitationStatus,
+  TeamStatus,
+  TeamMemberStatus,
+};
+
 export interface Tenant {
   id: string;
   slug: string;
   name: string;
-  status: string;
-  plan: string;
+  status: TenantStatus;
+  plan: SubscriptionPlan;
   settings: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
@@ -29,7 +46,7 @@ export interface WorkspaceMember {
   workspaceId: string;
   userId: string;
   roleId: string | null;
-  status: string; // active | suspended | removed
+  status: WorkspaceMemberStatus;
   joinedAt: Date;
   updatedAt: Date;
   createdAt: Date;
@@ -41,7 +58,7 @@ export interface WorkspaceInvitation {
   workspaceId: string;
   email: string;
   roleId: string | null;
-  status: string; // pending | accepted | cancelled | expired
+  status: InvitationStatus;
   invitedBy: string;
   expiresAt: Date;
   acceptedBy: string | null;
@@ -87,7 +104,7 @@ export interface AddMemberInput {
 
 export interface UpdateMemberInput {
   roleId?: string;
-  status?: string;
+  status?: WorkspaceMemberStatus;
 }
 
 export interface CreateInvitationInput {

@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { InjectDrizzle } from '@platform';
 import type { DrizzleDB } from '@platform';
 import { userRoleAssignments } from '../../../../../../db/schema/access';
-import type { UserRoleAssignment, AssignRoleInput } from '../../domain/access.types';
+import type { UserRoleAssignment, AssignRoleInput, ScopeType } from '../../domain/access.types';
 import { IRoleAssignmentRepository } from '../../domain/ports/role-assignment.repository';
 
 @Injectable()
@@ -22,7 +22,7 @@ export class RoleAssignmentDrizzleRepository implements IRoleAssignmentRepositor
   async findExisting(
     userId: string,
     roleId: string,
-    scopeType: string,
+    scopeType: ScopeType,
     scopeId: string | null,
   ): Promise<UserRoleAssignment | null> {
     const conditions = [

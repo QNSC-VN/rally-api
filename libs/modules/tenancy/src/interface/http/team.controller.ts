@@ -16,6 +16,7 @@ import { CurrentUser } from '@modules/identity';
 import { TeamService } from '../../application/team.service';
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
+import { teamStatusEnum } from '../../../../../../db/schema/enums';
 import type { Team, TeamMember } from '../../domain/team.types';
 
 // ── DTOs ──────────────────────────────────────────────────────────────────────
@@ -36,7 +37,7 @@ const UpdateTeamSchema = z.object({
   name: z.string().min(1).max(255).trim().optional(),
   description: z.string().max(1000).trim().nullable().optional(),
   leadId: z.string().uuid().nullable().optional(),
-  status: z.enum(['active', 'archived']).optional(),
+  status: z.enum(teamStatusEnum.enumValues).optional(),
 });
 class UpdateTeamDto extends createZodDto(UpdateTeamSchema) {}
 
