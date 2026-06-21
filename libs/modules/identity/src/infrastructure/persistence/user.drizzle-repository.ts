@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
+import { uuidv7 } from 'uuidv7';
 import { InjectDrizzle } from '@platform';
 import type { DrizzleDB } from '@platform';
-import { users } from '../../../../../../db/schema/identity';
+import { users, passwordResetTokens } from '../../../../../../db/schema/identity';
 import type { User } from '../../domain/user.types';
 import { IUserRepository } from '../../domain/ports/user.repository';
 
@@ -39,6 +40,10 @@ export class UserDrizzleRepository implements IUserRepository {
       .where(eq(users.id, id));
   }
 
+  async updateStatus(id: string, status: string): Promise<void> {
+    await this.db.update(users).set({ status, updatedAt: new Date() }).where(eq(users.id, id));
+  }
+
   async updateProfile(
     id: string,
     input: { displayName?: string; avatarUrl?: string | null; locale?: string; timezone?: string },
@@ -55,5 +60,37 @@ export class UserDrizzleRepository implements IUserRepository {
       .where(eq(users.id, id))
       .returning();
     return rows[0] as User;
+  }
+
+  async createPasswordResetToken(id: string, tokenHash: string, expiresAt: Date): Promise<void> {
+    await this.db.insert(passwordResetTokens).values({
+      id: uuidv7(),
+      userId: id,
+      tokenHash,
+      expiresAt,
+    });
+  }
+
+  async findPasswordResetToken(
+    tokenHash: string,
+  ): Promise<{ id: string; userId: string; usedAt: Date | null; expiresAt: Date } | null> {
+    const rows = await this.db
+      .select({
+        id: passwordResetTokens.id,
+        userId: passwordResetTokens.userId,
+        usedAt: passwordResetTokens.usedAt,
+        expiresAt: passwordResetTokens.expiresAt,
+      })
+      .from(passwordResetTokens)
+      .where(eq(passwordResetTokens.tokenHash, tokenHash))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  async markPasswordResetTokenUsed(id: string): Promise<void> {
+    await this.db
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(eq(passwordResetTokens.id, id));
   }
 }

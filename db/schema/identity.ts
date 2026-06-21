@@ -28,6 +28,7 @@ export const users = identitySchema.table(
     displayName: varchar('display_name', { length: 255 }).notNull(),
     avatarUrl: varchar('avatar_url', { length: 2048 }),
     passwordHash: text('password_hash'),
+    status: varchar('status', { length: 20 }).notNull().default('active'), // invited|active|inactive|suspended
     emailVerified: boolean('email_verified').notNull().default(false),
     mfaEnabled: boolean('mfa_enabled').notNull().default(false),
     mfaSecret: text('mfa_secret'),
@@ -41,7 +42,9 @@ export const users = identitySchema.table(
   },
   (t) => ({
     tenantIdx: index('ix_users_tenant').on(t.tenantId),
-    emailIdx: uniqueIndex('uq_users_email').on(t.email).where(sql`deleted_at IS NULL`),
+    emailIdx: uniqueIndex('uq_users_email')
+      .on(t.email)
+      .where(sql`deleted_at IS NULL`),
     tenantEmailIdx: uniqueIndex('uq_users_tenant_email')
       .on(t.tenantId, t.email)
       .where(sql`deleted_at IS NULL`),
@@ -73,3 +76,21 @@ export const authSessions = identitySchema.table(
 );
 
 import { sql } from 'drizzle-orm';
+
+// ── password_reset_tokens ────────────────────────────────────────────────
+
+export const passwordResetTokens = identitySchema.table(
+  'password_reset_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tokenHashIdx: uniqueIndex('uq_prt_token_hash').on(t.tokenHash),
+    userIdx: index('ix_prt_user').on(t.userId),
+  }),
+);

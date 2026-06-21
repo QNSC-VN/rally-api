@@ -8,13 +8,24 @@ import {
   WORKFLOW_STATUS_REPOSITORY,
 } from '../domain/ports/workflow-status.repository';
 import { ILabelRepository, LABEL_REPOSITORY } from '../domain/ports/label.repository';
+import {
+  IProjectTeamRepository,
+  PROJECT_TEAM_REPOSITORY,
+} from '../domain/ports/project-team.repository';
+import {
+  IProjectMemberRepository,
+  PROJECT_MEMBER_REPOSITORY,
+} from '../domain/ports/project-member.repository';
 import type {
   Project,
   WorkflowStatus,
   WorkflowTransition,
+  ProjectTeamLink,
+  ProjectMember,
   UpdateProjectInput,
   CreateWorkflowStatusInput,
   CreateWorkflowTransitionInput,
+  UpdateProjectMemberInput,
 } from '../domain/project.types';
 import type { Label } from '../domain/label.types';
 
@@ -40,6 +51,8 @@ export class ProjectsService {
     @Inject(PROJECT_REPOSITORY) private readonly projectRepo: IProjectRepository,
     @Inject(WORKFLOW_STATUS_REPOSITORY) private readonly statusRepo: IWorkflowStatusRepository,
     @Inject(LABEL_REPOSITORY) private readonly labelRepo: ILabelRepository,
+    @Inject(PROJECT_TEAM_REPOSITORY) private readonly projectTeamRepo: IProjectTeamRepository,
+    @Inject(PROJECT_MEMBER_REPOSITORY) private readonly projectMemberRepo: IProjectMemberRepository,
   ) {}
 
   // ── Projects ──────────────────────────────────────────────────────────────
@@ -260,5 +273,108 @@ export class ProjectsService {
     }
     await this.labelRepo.delete(labelId);
     this.logger.log({ labelId, projectId }, 'Label deleted');
+  }
+
+  // ── Project Teams ─────────────────────────────────────────────────────────
+
+  async listProjectTeams(tenantId: string, projectId: string): Promise<ProjectTeamLink[]> {
+    await this.getProject(tenantId, projectId);
+    return this.projectTeamRepo.listByProject(projectId);
+  }
+
+  async linkTeam(tenantId: string, projectId: string, teamId: string): Promise<ProjectTeamLink> {
+    await this.getProject(tenantId, projectId);
+
+    const existing = await this.projectTeamRepo.findLink(projectId, teamId);
+    if (existing) {
+      throw new ConflictException(
+        'PROJECT_TEAM_ALREADY_LINKED',
+        'Team is already linked to this project',
+      );
+    }
+
+    const link = await this.projectTeamRepo.linkTeam(uuidv7(), tenantId, projectId, teamId);
+    this.logger.log({ projectId, teamId }, 'Team linked to project');
+    return link;
+  }
+
+  async unlinkTeam(tenantId: string, projectId: string, teamId: string): Promise<void> {
+    await this.getProject(tenantId, projectId);
+
+    const existing = await this.projectTeamRepo.findLink(projectId, teamId);
+    if (!existing) {
+      throw new NotFoundException(
+        'PROJECT_TEAM_LINK_NOT_FOUND',
+        'Team is not linked to this project',
+      );
+    }
+
+    await this.projectTeamRepo.unlinkTeam(projectId, teamId);
+    this.logger.log({ projectId, teamId }, 'Team unlinked from project');
+  }
+
+  // ── Project Members ───────────────────────────────────────────────────────
+
+  async listProjectMembers(tenantId: string, projectId: string): Promise<ProjectMember[]> {
+    await this.getProject(tenantId, projectId);
+    return this.projectMemberRepo.listByProject(projectId);
+  }
+
+  async addProjectMember(
+    tenantId: string,
+    projectId: string,
+    userId: string,
+    roleId?: string,
+  ): Promise<ProjectMember> {
+    await this.getProject(tenantId, projectId);
+
+    const existing = await this.projectMemberRepo.findMember(projectId, userId);
+    if (existing) {
+      throw new ConflictException(
+        'PROJECT_MEMBER_ALREADY_EXISTS',
+        'User is already a member of this project',
+      );
+    }
+
+    const member = await this.projectMemberRepo.addMember({
+      id: uuidv7(),
+      tenantId,
+      projectId,
+      userId,
+      roleId,
+    });
+    this.logger.log({ projectId, userId }, 'Project member added');
+    return member;
+  }
+
+  async updateProjectMember(
+    tenantId: string,
+    projectId: string,
+    memberId: string,
+    input: UpdateProjectMemberInput,
+  ): Promise<ProjectMember> {
+    await this.getProject(tenantId, projectId);
+
+    const member = await this.projectMemberRepo.findMemberById(memberId);
+    if (!member || member.projectId !== projectId) {
+      throw new NotFoundException('PROJECT_MEMBER_NOT_FOUND', 'Project member not found');
+    }
+
+    return this.projectMemberRepo.updateMember(memberId, input);
+  }
+
+  async removeProjectMember(tenantId: string, projectId: string, userId: string): Promise<void> {
+    await this.getProject(tenantId, projectId);
+
+    const existing = await this.projectMemberRepo.findMember(projectId, userId);
+    if (!existing) {
+      throw new NotFoundException(
+        'PROJECT_MEMBER_NOT_FOUND',
+        'User is not a member of this project',
+      );
+    }
+
+    await this.projectMemberRepo.removeMember(projectId, userId);
+    this.logger.log({ projectId, userId }, 'Project member removed');
   }
 }

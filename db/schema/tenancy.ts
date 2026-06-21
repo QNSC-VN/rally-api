@@ -32,7 +32,9 @@ export const tenants = tenancySchema.table(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => ({
-    slugIdx: uniqueIndex('uq_tenants_slug').on(t.slug).where(sql`deleted_at IS NULL`),
+    slugIdx: uniqueIndex('uq_tenants_slug')
+      .on(t.slug)
+      .where(sql`deleted_at IS NULL`),
     statusIdx: index('ix_tenants_status').on(t.status),
   }),
 );
@@ -70,12 +72,63 @@ export const workspaceMembers = tenancySchema.table(
     tenantId: uuid('tenant_id').notNull(),
     workspaceId: uuid('workspace_id').notNull(),
     userId: uuid('user_id').notNull(),
+    roleId: uuid('role_id'),
+    status: varchar('status', { length: 20 }).notNull().default('active'), // active|suspended|removed
+    joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     tenantIdx: index('ix_wm_tenant').on(t.tenantId),
     uniqueMember: uniqueIndex('uq_workspace_member').on(t.workspaceId, t.userId),
     userIdx: index('ix_wm_user').on(t.userId),
+    statusIdx: index('ix_wm_status').on(t.workspaceId, t.status),
+  }),
+);
+
+// ── workspace_invitations ────────────────────────────────────────────
+
+export const workspaceInvitations = tenancySchema.table(
+  'workspace_invitations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    email: varchar('email', { length: 320 }).notNull(),
+    roleId: uuid('role_id'),
+    tokenHash: text('token_hash').notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('pending'), // pending|accepted|cancelled|expired
+    invitedBy: uuid('invited_by').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    acceptedBy: uuid('accepted_by'),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tenantIdx: index('ix_wi_tenant').on(t.tenantId),
+    workspaceIdx: index('ix_wi_workspace').on(t.workspaceId),
+    tokenHashIdx: uniqueIndex('uq_wi_token_hash').on(t.tokenHash),
+    emailIdx: index('ix_wi_email').on(t.workspaceId, t.email),
+  }),
+);
+
+// ── workspace_settings ───────────────────────────────────────────────
+
+export const workspaceSettings = tenancySchema.table(
+  'workspace_settings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id').notNull(),
+    tenantId: uuid('tenant_id').notNull(),
+    timezone: varchar('timezone', { length: 64 }).notNull().default('UTC'),
+    defaultLocale: varchar('default_locale', { length: 10 }).notNull().default('en'),
+    dateFormat: varchar('date_format', { length: 20 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    workspaceIdx: uniqueIndex('uq_workspace_settings').on(t.workspaceId),
   }),
 );
 

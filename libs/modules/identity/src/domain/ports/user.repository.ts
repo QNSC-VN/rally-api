@@ -7,8 +7,14 @@ export interface IUserRepository {
   findById(id: string): Promise<User | null>;
   updateLastLogin(id: string): Promise<void>;
   updatePasswordHash(id: string, passwordHash: string): Promise<void>;
+  updateStatus(id: string, status: string): Promise<void>;
   updateProfile(
     id: string,
     input: { displayName?: string; avatarUrl?: string | null; locale?: string; timezone?: string },
   ): Promise<User>;
+  createPasswordResetToken(id: string, tokenHash: string, expiresAt: Date): Promise<void>;
+  findPasswordResetToken(
+    tokenHash: string,
+  ): Promise<{ id: string; userId: string; usedAt: Date | null; expiresAt: Date } | null>;
+  markPasswordResetTokenUsed(id: string): Promise<void>;
 }

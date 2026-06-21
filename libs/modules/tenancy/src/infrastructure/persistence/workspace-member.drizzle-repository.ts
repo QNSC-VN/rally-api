@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, lt } from 'drizzle-orm';
+import { and, count, eq, lt } from 'drizzle-orm';
 import { InjectDrizzle, buildPageResult } from '@platform';
 import type { DrizzleDB, CursorPayload, PagedResult } from '@platform';
 import { workspaceMembers } from '../../../../../../db/schema/tenancy';
-import type { WorkspaceMember, AddMemberInput } from '../../domain/tenancy.types';
+import type {
+  WorkspaceMember,
+  AddMemberInput,
+  UpdateMemberInput,
+} from '../../domain/tenancy.types';
 import { IWorkspaceMemberRepository } from '../../domain/ports/workspace-member.repository';
 
 @Injectable()
@@ -21,6 +25,15 @@ export class WorkspaceMemberDrizzleRepository implements IWorkspaceMemberReposit
     return (rows[0] as WorkspaceMember | undefined) ?? null;
   }
 
+  async findMemberById(id: string): Promise<WorkspaceMember | null> {
+    const rows = await this.db
+      .select()
+      .from(workspaceMembers)
+      .where(eq(workspaceMembers.id, id))
+      .limit(1);
+    return (rows[0] as WorkspaceMember | undefined) ?? null;
+  }
+
   async listMembers(
     workspaceId: string,
     { limit, cursor }: { limit: number; cursor: CursorPayload | null },
@@ -28,17 +41,17 @@ export class WorkspaceMemberDrizzleRepository implements IWorkspaceMemberReposit
     const conditions = [eq(workspaceMembers.workspaceId, workspaceId)];
 
     if (cursor) {
-      conditions.push(lt(workspaceMembers.createdAt, new Date(cursor.k[0] as string)));
+      conditions.push(lt(workspaceMembers.joinedAt, new Date(cursor.k[0] as string)));
     }
 
     const rows = await this.db
       .select()
       .from(workspaceMembers)
       .where(and(...conditions))
-      .orderBy(workspaceMembers.createdAt)
+      .orderBy(workspaceMembers.joinedAt)
       .limit(limit + 1);
 
-    return buildPageResult(rows as WorkspaceMember[], limit, (m) => [m.createdAt.toISOString()]);
+    return buildPageResult(rows as WorkspaceMember[], limit, (m) => [m.joinedAt.toISOString()]);
   }
 
   async addMember(input: AddMemberInput): Promise<WorkspaceMember> {
@@ -49,14 +62,32 @@ export class WorkspaceMemberDrizzleRepository implements IWorkspaceMemberReposit
         tenantId: input.tenantId,
         workspaceId: input.workspaceId,
         userId: input.userId,
+        roleId: input.roleId ?? null,
+        status: 'active',
+        joinedAt: new Date(),
+        updatedAt: new Date(),
       })
+      .returning();
+    return rows[0] as WorkspaceMember;
+  }
+
+  async updateMember(id: string, input: UpdateMemberInput): Promise<WorkspaceMember> {
+    const rows = await this.db
+      .update(workspaceMembers)
+      .set({
+        ...(input.roleId !== undefined && { roleId: input.roleId }),
+        ...(input.status !== undefined && { status: input.status }),
+        updatedAt: new Date(),
+      })
+      .where(eq(workspaceMembers.id, id))
       .returning();
     return rows[0] as WorkspaceMember;
   }
 
   async removeMember(workspaceId: string, userId: string): Promise<void> {
     await this.db
-      .delete(workspaceMembers)
+      .update(workspaceMembers)
+      .set({ status: 'removed', updatedAt: new Date() })
       .where(
         and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, userId)),
       );
@@ -64,6 +95,21 @@ export class WorkspaceMemberDrizzleRepository implements IWorkspaceMemberReposit
 
   async isMember(workspaceId: string, userId: string): Promise<boolean> {
     const result = await this.findMember(workspaceId, userId);
-    return result !== null;
+    return result !== null && result.status === 'active';
+  }
+
+  async countActiveAdmins(workspaceId: string): Promise<number> {
+    // roleId === 'admin' is a simplification; real implementation may join roles table
+    const rows = await this.db
+      .select({ cnt: count() })
+      .from(workspaceMembers)
+      .where(
+        and(
+          eq(workspaceMembers.workspaceId, workspaceId),
+          eq(workspaceMembers.roleId, 'admin'),
+          eq(workspaceMembers.status, 'active'),
+        ),
+      );
+    return Number(rows[0]?.cnt ?? 0);
   }
 }

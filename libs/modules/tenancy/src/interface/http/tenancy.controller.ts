@@ -11,17 +11,33 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors, buildPageArgs, PageQueryDto } from '@platform';
+import { Auth, ApiCommonErrors, Public, buildPageArgs, PageQueryDto } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { TenancyService } from '../../application/tenancy.service';
-import { CreateWorkspaceDto, UpdateWorkspaceDto, AddMemberDto } from './dto/tenancy-request.dto';
+import {
+  CreateWorkspaceDto,
+  UpdateWorkspaceDto,
+  AddMemberDto,
+  UpdateMemberDto,
+  InviteMemberDto,
+  AcceptInvitationDto,
+  UpdateWorkspaceSettingsDto,
+} from './dto/tenancy-request.dto';
 import type {
   TenantResponseDto,
   WorkspaceResponseDto,
   MemberResponseDto,
+  InvitationResponseDto,
+  WorkspaceSettingsResponseDto,
 } from './dto/tenancy-response.dto';
-import type { Tenant, Workspace, WorkspaceMember } from '../../domain/tenancy.types';
+import type {
+  Tenant,
+  Workspace,
+  WorkspaceMember,
+  WorkspaceInvitation,
+  WorkspaceSettings,
+} from '../../domain/tenancy.types';
 
 // ── Mappers ──────────────────────────────────────────────────────────────────
 
@@ -57,7 +73,35 @@ function toMemberDto(m: WorkspaceMember): MemberResponseDto {
     id: m.id,
     workspaceId: m.workspaceId,
     userId: m.userId,
+    roleId: m.roleId,
+    status: m.status,
+    joinedAt: m.joinedAt?.toISOString() ?? new Date().toISOString(),
     createdAt: m.createdAt.toISOString(),
+  };
+}
+
+function toInvitationDto(i: WorkspaceInvitation): InvitationResponseDto {
+  return {
+    id: i.id,
+    workspaceId: i.workspaceId,
+    email: i.email,
+    roleId: i.roleId,
+    status: i.status,
+    invitedBy: i.invitedBy,
+    expiresAt: i.expiresAt.toISOString(),
+    acceptedBy: i.acceptedBy,
+    acceptedAt: i.acceptedAt?.toISOString() ?? null,
+    createdAt: i.createdAt.toISOString(),
+  };
+}
+
+function toSettingsDto(s: WorkspaceSettings): WorkspaceSettingsResponseDto {
+  return {
+    workspaceId: s.workspaceId,
+    timezone: s.timezone,
+    defaultLocale: s.defaultLocale,
+    dateFormat: s.dateFormat,
+    updatedAt: s.updatedAt.toISOString(),
   };
 }
 
@@ -192,6 +236,29 @@ export class WorkspaceController {
     return toMemberDto(member);
   }
 
+  // ── Update member ──────────────────────────────────────────────────────────
+
+  @Patch(':id/members/:memberId')
+  @ApiOperation({ summary: 'Update member role or status' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'memberId', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(400, 401, 404, 409, 422)
+  async updateMember(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('memberId', ParseUUIDPipe) memberId: string,
+    @Body() dto: UpdateMemberDto,
+  ): Promise<MemberResponseDto> {
+    const member = await this.tenancyService.updateMember(
+      user.tenantId,
+      id,
+      memberId,
+      dto,
+      user.sub,
+    );
+    return toMemberDto(member);
+  }
+
   // ── Remove member ──────────────────────────────────────────────────────────
 
   @Delete(':id/members/:userId')
@@ -206,5 +273,103 @@ export class WorkspaceController {
     @Param('userId', ParseUUIDPipe) userId: string,
   ): Promise<void> {
     await this.tenancyService.removeMember(user.tenantId, id, userId, user.sub);
+  }
+
+  // ── Invite member ──────────────────────────────────────────────────────────
+
+  @Post(':id/invitations')
+  @ApiOperation({ summary: 'Invite a user to the workspace by email' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(400, 401, 409, 422)
+  async inviteMember(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: InviteMemberDto,
+  ): Promise<InvitationResponseDto> {
+    const invitation = await this.tenancyService.inviteMember(
+      user.tenantId,
+      id,
+      dto.email,
+      dto.roleId,
+      user.sub,
+    );
+    return toInvitationDto(invitation);
+  }
+
+  // ── List invitations ───────────────────────────────────────────────────────
+
+  @Get(':id/invitations')
+  @ApiOperation({ summary: 'List invitations for a workspace' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(401, 404)
+  async listInvitations(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<InvitationResponseDto[]> {
+    const invitations = await this.tenancyService.listInvitations(user.tenantId, id);
+    return invitations.map(toInvitationDto);
+  }
+
+  // ── Cancel invitation ──────────────────────────────────────────────────────
+
+  @Delete(':id/invitations/:invitationId')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Cancel a pending workspace invitation' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'invitationId', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(401, 404)
+  async cancelInvitation(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('invitationId', ParseUUIDPipe) invitationId: string,
+  ): Promise<void> {
+    await this.tenancyService.cancelInvitation(user.tenantId, id, invitationId, user.sub);
+  }
+
+  // ── Workspace settings ─────────────────────────────────────────────────────
+
+  @Get(':id/settings')
+  @ApiOperation({ summary: 'Get workspace settings' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(401, 404)
+  async getSettings(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<WorkspaceSettingsResponseDto> {
+    const settings = await this.tenancyService.getSettings(user.tenantId, id);
+    return toSettingsDto(settings);
+  }
+
+  @Patch(':id/settings')
+  @ApiOperation({ summary: 'Update workspace settings' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(400, 401, 404, 422)
+  async updateSettings(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateWorkspaceSettingsDto,
+  ): Promise<WorkspaceSettingsResponseDto> {
+    const settings = await this.tenancyService.updateSettings(user.tenantId, id, dto);
+    return toSettingsDto(settings);
+  }
+}
+
+// ── Public invitation accept ──────────────────────────────────────────────────
+
+@ApiTags('invitations')
+@Controller('invitations')
+export class InvitationController {
+  constructor(private readonly tenancyService: TenancyService) {}
+
+  @Post('accept')
+  @Public()
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Accept a workspace invitation using the token from email' })
+  @ApiCommonErrors(400, 404, 422)
+  async acceptInvitation(
+    @Body() dto: AcceptInvitationDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<void> {
+    await this.tenancyService.acceptInvitation(dto.token, user.sub);
   }
 }

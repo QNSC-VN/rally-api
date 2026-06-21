@@ -7,4 +7,5 @@ export interface IAuthSessionRepository {
   create(input: CreateSessionInput): Promise<void>;
   revokeById(id: string): Promise<void>;
   revokeFamily(familyId: string): Promise<void>;
+  revokeAllForUser(userId: string): Promise<void>;
 }

@@ -35,3 +35,20 @@ export const UpdateProfileSchema = z.object({
 });
 
 export class UpdateProfileDto extends createZodDto(UpdateProfileSchema) {}
+
+// ── Forgot password ──────────────────────────────────────────────────────────
+
+export const ForgotPasswordSchema = z.object({
+  email: z.string().email('Must be a valid email address'),
+});
+
+export class ForgotPasswordDto extends createZodDto(ForgotPasswordSchema) {}
+
+// ── Reset password ───────────────────────────────────────────────────────────
+
+export const ResetPasswordSchema = z.object({
+  token: z.string().min(1),
+  newPassword: PASSWORD_RULES,
+});
+
+export class ResetPasswordDto extends createZodDto(ResetPasswordSchema) {}

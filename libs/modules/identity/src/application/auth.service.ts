@@ -57,8 +57,12 @@ export class AuthService {
       throw new UnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Invalid email or password');
     }
 
-    if (user.deletedAt) {
-      throw new UnauthorizedException('USER_DEACTIVATED', 'Account has been deactivated');
+    if (user.deletedAt || user.status === 'suspended' || user.status === 'inactive') {
+      throw new UnauthorizedException('USER_DEACTIVATED', 'Account is not active');
+    }
+
+    if (user.status === 'invited') {
+      throw new UnauthorizedException('USER_DEACTIVATED', 'Account has not been activated yet');
     }
 
     const valid = await argon2.verify(user.passwordHash, password);
@@ -278,5 +282,83 @@ export class AuthService {
   /** Hash a password with argon2id (use once, at user creation / password reset). */
   static async hashPassword(password: string): Promise<string> {
     return argon2.hash(password, { type: argon2.argon2id });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Logout all devices
+  // ---------------------------------------------------------------------------
+
+  async logoutAll(payload: JwtPayload): Promise<void> {
+    const now = Math.floor(Date.now() / 1000);
+    const ttl = Math.max(payload.exp - now, 0);
+
+    await Promise.all([
+      ttl > 0 ? this.valkey.denylistToken(payload.jti, ttl) : Promise.resolve(),
+      this.sessionRepo.revokeAllForUser(payload.sub),
+    ]);
+
+    this.logger.log({ userId: payload.sub }, 'User logged out from all devices');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Forgot password
+  // ---------------------------------------------------------------------------
+
+  async forgotPassword(email: string): Promise<void> {
+    // Always return success to prevent user enumeration (AUTH-FR-007)
+    const user = await this.userRepo.findByEmail(email.toLowerCase().trim());
+    if (!user || user.deletedAt || user.status !== 'active') {
+      return; // silent no-op
+    }
+
+    const rawToken = randomBytes(32).toString('base64url');
+    const tokenHash = this.hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await this.userRepo.createPasswordResetToken(user.id, tokenHash, expiresAt);
+
+    // TODO: send email with reset link containing rawToken
+    // In dev we log the token so the flow can be tested without an email service
+    this.logger.warn(
+      { userId: user.id, token: rawToken },
+      'Password reset token issued (dev-mode log)',
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reset password
+  // ---------------------------------------------------------------------------
+
+  async resetPassword(rawToken: string, newPassword: string): Promise<void> {
+    const tokenHash = this.hashToken(rawToken);
+    const record = await this.userRepo.findPasswordResetToken(tokenHash);
+
+    if (!record) {
+      throw new UnauthorizedException(
+        'PASSWORD_RESET_TOKEN_INVALID',
+        'Invalid or unknown reset token',
+      );
+    }
+
+    if (record.usedAt !== null) {
+      throw new UnauthorizedException(
+        'PASSWORD_RESET_TOKEN_INVALID',
+        'Reset token has already been used',
+      );
+    }
+
+    if (record.expiresAt < new Date()) {
+      throw new UnauthorizedException('PASSWORD_RESET_TOKEN_EXPIRED', 'Reset token has expired');
+    }
+
+    const newHash = await AuthService.hashPassword(newPassword);
+
+    await Promise.all([
+      this.userRepo.updatePasswordHash(record.userId, newHash),
+      this.userRepo.markPasswordResetTokenUsed(record.id),
+      this.sessionRepo.revokeAllForUser(record.userId), // AUTH-FR-009
+    ]);
+
+    this.logger.log({ userId: record.userId }, 'Password reset successfully');
   }
 }

@@ -250,4 +250,93 @@ export class ProjectsController {
   ): Promise<void> {
     await this.projectsService.deleteLabel(user.tenantId, id, labelId);
   }
+
+  // ── Project Teams ─────────────────────────────────────────────────────────
+
+  @Get(':id/teams')
+  @ApiOperation({ summary: 'List teams linked to a project' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(401, 404)
+  async listProjectTeams(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string) {
+    return this.projectsService.listProjectTeams(user.tenantId, id);
+  }
+
+  @Post(':id/teams')
+  @ApiOperation({ summary: 'Link a team to a project' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(400, 401, 404, 409, 422)
+  async linkTeam(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { teamId: string },
+  ) {
+    return this.projectsService.linkTeam(user.tenantId, id, dto.teamId);
+  }
+
+  @Delete(':id/teams/:teamId')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Unlink a team from a project' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'teamId', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(401, 404)
+  async unlinkTeam(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('teamId', ParseUUIDPipe) teamId: string,
+  ): Promise<void> {
+    await this.projectsService.unlinkTeam(user.tenantId, id, teamId);
+  }
+
+  // ── Project Members ───────────────────────────────────────────────────────
+
+  @Get(':id/members')
+  @ApiOperation({ summary: 'List project members' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(401, 404)
+  async listProjectMembers(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.projectsService.listProjectMembers(user.tenantId, id);
+  }
+
+  @Post(':id/members')
+  @ApiOperation({ summary: 'Add a member to a project' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(400, 401, 404, 409, 422)
+  async addProjectMember(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: { userId: string; roleId?: string },
+  ) {
+    return this.projectsService.addProjectMember(user.tenantId, id, dto.userId, dto.roleId);
+  }
+
+  @Patch(':id/members/:memberId')
+  @ApiOperation({ summary: 'Update a project member role/status' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'memberId', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(400, 401, 404, 422)
+  async updateProjectMember(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('memberId', ParseUUIDPipe) memberId: string,
+    @Body() dto: { roleId?: string; status?: string },
+  ) {
+    return this.projectsService.updateProjectMember(user.tenantId, id, memberId, dto);
+  }
+
+  @Delete(':id/members/:userId')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Remove a member from a project' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'userId', type: 'string', format: 'uuid' })
+  @ApiCommonErrors(401, 404)
+  async removeProjectMember(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ): Promise<void> {
+    await this.projectsService.removeProjectMember(user.tenantId, id, userId);
+  }
 }

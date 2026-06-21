@@ -5,7 +5,13 @@ import '@fastify/cookie';
 import { Auth, ApiCommonErrors, Public, UnauthorizedException } from '@platform';
 import type { JwtPayload } from '@platform';
 import { AuthService } from '../../application/auth.service';
-import { LoginDto, ChangePasswordDto, UpdateProfileDto } from './dto/login.dto';
+import {
+  LoginDto,
+  ChangePasswordDto,
+  UpdateProfileDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+} from './dto/login.dto';
 import { AuthTokenResponseDto, UserProfileResponseDto } from './dto/auth-response.dto';
 import { CurrentUser } from './decorators/current-user.decorator';
 
@@ -148,5 +154,42 @@ export class AuthController {
     @Body() dto: ChangePasswordDto,
   ): Promise<void> {
     await this.authService.changePassword(user.sub, dto.currentPassword, dto.newPassword);
+  }
+
+  // ── POST /auth/logout-all ──────────────────────────────────────────────────
+
+  @Post('logout-all')
+  @Auth()
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Revoke all sessions for the authenticated user' })
+  @ApiCommonErrors(401)
+  async logoutAll(
+    @CurrentUser() user: JwtPayload,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<void> {
+    await this.authService.logoutAll(user);
+    reply.clearCookie(REFRESH_COOKIE, { path: COOKIE_BASE.path });
+  }
+
+  // ── POST /auth/forgot-password ─────────────────────────────────────────────
+
+  @Post('forgot-password')
+  @Public()
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Request a password reset link (always returns 200)' })
+  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ message: string }> {
+    await this.authService.forgotPassword(dto.email);
+    return { message: 'If that email exists, a password reset link has been sent.' };
+  }
+
+  // ── POST /auth/reset-password ──────────────────────────────────────────────
+
+  @Post('reset-password')
+  @Public()
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Reset password using a token from forgot-password email' })
+  @ApiCommonErrors(400, 401, 422)
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
+    await this.authService.resetPassword(dto.token, dto.newPassword);
   }
 }

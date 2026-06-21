@@ -10,6 +10,7 @@ export interface User {
   displayName: string;
   avatarUrl: string | null;
   passwordHash: string | null;
+  status: string; // invited | active | inactive | suspended
   emailVerified: boolean;
   locale: string;
   timezone: string;
@@ -39,4 +40,13 @@ export interface CreateSessionInput {
   familyId: string;
   ipAddress?: string;
   expiresAt: Date;
+}
+
+export interface PasswordResetToken {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: Date;
+  usedAt: Date | null;
+  createdAt: Date;
 }

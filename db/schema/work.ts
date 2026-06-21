@@ -299,3 +299,90 @@ export const workItemLabels = workSchema.table(
     labelIdx: index('ix_wil_label').on(t.labelId),
   }),
 );
+
+// ── teams (workspace-scoped) ──────────────────────────────────────────────
+
+export const teams = workSchema.table(
+  'teams',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    workspaceId: uuid('workspace_id').notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    key: varchar('key', { length: 10 }).notNull(),
+    description: text('description'),
+    leadId: uuid('lead_id'),
+    status: varchar('status', { length: 20 }).notNull().default('active'), // active|archived
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tenantIdx: index('ix_teams_tenant').on(t.tenantId),
+    workspaceIdx: index('ix_teams_workspace').on(t.workspaceId),
+    uniqueKey: uniqueIndex('uq_teams_key').on(t.workspaceId, t.key),
+  }),
+);
+
+// ── team_members ──────────────────────────────────────────────────────────
+
+export const teamMembers = workSchema.table(
+  'team_members',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    teamId: uuid('team_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('active'), // active|removed
+    joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tenantIdx: index('ix_tm_tenant').on(t.tenantId),
+    teamIdx: index('ix_tm_team').on(t.teamId),
+    uniqueMember: uniqueIndex('uq_team_member').on(t.teamId, t.userId),
+  }),
+);
+
+// ── project_teams (project–team link) ────────────────────────────────────
+
+export const projectTeams = workSchema.table(
+  'project_teams',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    teamId: uuid('team_id').notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('active'), // active|unlinked
+    linkedAt: timestamp('linked_at', { withTimezone: true }).notNull().defaultNow(),
+    unlinkedAt: timestamp('unlinked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tenantIdx: index('ix_pt_tenant').on(t.tenantId),
+    projectIdx: index('ix_pt_project').on(t.projectId),
+    uniqueLink: uniqueIndex('uq_project_team').on(t.projectId, t.teamId),
+  }),
+);
+
+// ── project_members ───────────────────────────────────────────────────────
+
+export const projectMembers = workSchema.table(
+  'project_members',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    roleId: uuid('role_id'),
+    status: varchar('status', { length: 20 }).notNull().default('active'), // active|removed
+    joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tenantIdx: index('ix_pm_tenant').on(t.tenantId),
+    projectIdx: index('ix_pm_project').on(t.projectId),
+    userIdx: index('ix_pm_user').on(t.userId),
+    uniqueMember: uniqueIndex('uq_project_member').on(t.projectId, t.userId),
+  }),
+);

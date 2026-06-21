@@ -31,6 +31,43 @@ export class UpdateWorkspaceDto extends createZodDto(UpdateWorkspaceSchema) {}
 
 export const AddMemberSchema = z.object({
   userId: z.string().uuid(),
+  roleId: z.string().min(1).max(100).optional(),
 });
 
 export class AddMemberDto extends createZodDto(AddMemberSchema) {}
+
+// ── Update Member ─────────────────────────────────────────────────────────────
+
+export const UpdateMemberSchema = z.object({
+  roleId: z.string().min(1).max(100).optional(),
+  status: z.enum(['active', 'suspended', 'removed']).optional(),
+});
+
+export class UpdateMemberDto extends createZodDto(UpdateMemberSchema) {}
+
+// ── Invite Member ─────────────────────────────────────────────────────────────
+
+export const InviteMemberSchema = z.object({
+  email: z.string().email(),
+  roleId: z.string().min(1).max(100).optional(),
+});
+
+export class InviteMemberDto extends createZodDto(InviteMemberSchema) {}
+
+// ── Accept Invitation ─────────────────────────────────────────────────────────
+
+export const AcceptInvitationSchema = z.object({
+  token: z.string().min(1),
+});
+
+export class AcceptInvitationDto extends createZodDto(AcceptInvitationSchema) {}
+
+// ── Workspace Settings ────────────────────────────────────────────────────────
+
+export const UpdateWorkspaceSettingsSchema = z.object({
+  timezone: z.string().min(1).max(100).optional(),
+  defaultLocale: z.string().min(2).max(10).optional(),
+  dateFormat: z.string().min(1).max(50).optional(),
+});
+
+export class UpdateWorkspaceSettingsDto extends createZodDto(UpdateWorkspaceSettingsSchema) {}

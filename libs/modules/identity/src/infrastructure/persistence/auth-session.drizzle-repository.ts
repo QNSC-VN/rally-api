@@ -41,4 +41,11 @@ export class AuthSessionDrizzleRepository implements IAuthSessionRepository {
       .set({ isRevoked: true })
       .where(eq(authSessions.familyId, familyId));
   }
+
+  async revokeAllForUser(userId: string): Promise<void> {
+    await this.db
+      .update(authSessions)
+      .set({ isRevoked: true })
+      .where(eq(authSessions.userId, userId));
+  }
 }

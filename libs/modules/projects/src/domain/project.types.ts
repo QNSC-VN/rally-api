@@ -73,3 +73,37 @@ export interface CreateWorkflowTransitionInput {
   toStatusId: string;
   name?: string;
 }
+
+export interface ProjectTeamLink {
+  id: string;
+  tenantId: string;
+  projectId: string;
+  teamId: string;
+  status: string; // active | unlinked
+  linkedAt: Date;
+  unlinkedAt: Date | null;
+}
+
+export interface ProjectMember {
+  id: string;
+  tenantId: string;
+  projectId: string;
+  userId: string;
+  roleId: string | null;
+  status: string; // active | removed
+  joinedAt: Date;
+  updatedAt: Date;
+}
+
+export interface AddProjectMemberInput {
+  id: string;
+  tenantId: string;
+  projectId: string;
+  userId: string;
+  roleId?: string;
+}
+
+export interface UpdateProjectMemberInput {
+  roleId?: string;
+  status?: string;
+}
