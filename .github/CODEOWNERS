@@ -1,0 +1,15 @@
+# Default reviewers for all files
+*                                   @nghiavt1802/backend-team
+
+# Authentication + security — needs security review
+apps/api/src/auth/                  @nghiavt1802/backend-leads
+libs/auth/                          @nghiavt1802/backend-leads
+
+# Database migrations — must be reviewed by a lead before merging
+db/migrations/                      @nghiavt1802/backend-leads
+
+# CI/CD and infra-adjacent workflows — devops must review
+.github/workflows/                  @nghiavt1802/backend-leads
+
+# Shared platform config (env schema, global modules)
+libs/platform/                      @nghiavt1802/backend-leads

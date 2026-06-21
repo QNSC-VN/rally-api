@@ -1,0 +1,240 @@
+# =============================================================================
+# Deploy — Build, push to ECR, migrate, then update ECS services
+#
+# Triggers:
+#   develop → push to main (auto)
+#   prod    → push a semver tag  v*.*.*  (requires "production" environment
+#             approval in GitHub Settings → Environments)
+#
+# Authentication: GitHub OIDC → AWS IAM (no stored AWS keys).
+# Prerequisites:
+#   - rally-infra has provisioned ECR repos and ECS services
+#   - GitHub repository secrets:
+#       AWS_ACCOUNT_ID        (12-digit, no hyphens)
+#       AWS_REGION            (e.g. ap-southeast-1)
+#   - GitHub environments: "develop", "production"
+#     Each environment has an env-scoped var:
+#       ECS_CLUSTER           (e.g. rally-develop or rally-prod)
+#       ECS_API_SERVICE       (e.g. api)
+#       ECS_WORKER_SERVICE    (e.g. worker)
+#       ECS_MIGRATOR_TASK_DEF (e.g. rally-develop-migrator)
+#       ECS_MIGRATOR_SUBNET   (private subnet ID for the migration task)
+#       ECS_MIGRATOR_SG       (security group allowing outbound to RDS)
+# =============================================================================
+name: Deploy
+
+on:
+  push:
+    branches: [main]           # → develop env (auto)
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'   # → production (semver only, no -rc suffix)
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false   # never cancel a running deploy
+
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.33.2'
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Resolve target environment and image tag from the trigger.
+  # ─────────────────────────────────────────────────────────────────────────
+  context:
+    name: Resolve context
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.ctx.outputs.environment }}
+      image_tag:   ${{ steps.ctx.outputs.image_tag }}
+    steps:
+      - name: Determine env + tag
+        id: ctx
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "environment=production" >> "$GITHUB_OUTPUT"
+            echo "image_tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=develop" >> "$GITHUB_OUTPUT"
+            echo "image_tag=sha-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Build and push all three images (api, worker, migrator) to ECR.
+  # Runs before the environment gate so images are ready for approval.
+  # ─────────────────────────────────────────────────────────────────────────
+  build-push:
+    name: Build & push to ECR
+    runs-on: ubuntu-latest
+    needs: context
+    permissions:
+      id-token: write   # needed for OIDC
+      contents: read
+
+    env:
+      IMAGE_TAG: ${{ needs.context.outputs.image_tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/rally-github-ecr-push
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build & push API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: api
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/rally-api:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REGISTRY }}/rally-api:latest
+          cache-from: type=gha,scope=api
+          cache-to:   type=gha,mode=max,scope=api
+
+      - name: Build & push Worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: worker
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/rally-worker:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REGISTRY }}/rally-worker:latest
+          cache-from: type=gha,scope=worker
+          cache-to:   type=gha,mode=max,scope=worker
+
+      - name: Build & push Migrator
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: migrator
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/rally-migrator:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REGISTRY }}/rally-migrator:latest
+          cache-from: type=gha,scope=migrator
+          cache-to:   type=gha,mode=max,scope=migrator
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Deploy to the resolved environment.
+  # "production" environment has a required manual reviewer configured in
+  # GitHub Settings → Environments → production → Required reviewers.
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy (${{ needs.context.outputs.environment }})
+    runs-on: ubuntu-latest
+    needs: [context, build-push]
+    environment: ${{ needs.context.outputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+
+    env:
+      IMAGE_TAG:   ${{ needs.context.outputs.image_tag }}
+      ENVIRONMENT: ${{ needs.context.outputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # Each env has its own IAM role scoped to that environment's resources.
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/rally-github-deploy-${{ env.ENVIRONMENT }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # ── Step 1: Run migrations (blocking — deploy only continues if this passes)
+      - name: Register migrator task definition revision
+        id: migrator-taskdef
+        run: |
+          # Update the image tag in the task definition and register a new revision.
+          TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition "${{ vars.ECS_MIGRATOR_TASK_DEF }}" \
+            --query 'taskDefinition' --output json)
+
+          NEW_TASK_DEF=$(echo "$TASK_DEF" | python3 -c "
+          import sys, json
+          td = json.load(sys.stdin)
+          for c in td['containerDefinitions']:
+              if c['name'] == 'migrator':
+                  repo = c['image'].rsplit(':', 1)[0]
+                  c['image'] = f\"{repo}:$IMAGE_TAG\"
+          # Strip read-only fields
+          for f in ['taskDefinitionArn','revision','status','requiresAttributes',
+                    'placementConstraints','compatibilities','registeredAt','registeredBy']:
+              td.pop(f, None)
+          print(json.dumps(td))
+          ")
+
+          ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Run migrations
+        run: |
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --task-definition "${{ steps.migrator-taskdef.outputs.arn }}" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${{ vars.ECS_MIGRATOR_SUBNET }}],securityGroups=[${{ vars.ECS_MIGRATOR_SG }}],assignPublicIp=DISABLED}" \
+            --query 'tasks[0].taskArn' --output text)
+
+          echo "Migration task: $TASK_ARN"
+
+          # Wait up to 10 minutes for the migration task to finish.
+          aws ecs wait tasks-stopped \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+
+          echo "Migration exit code: $EXIT_CODE"
+          test "$EXIT_CODE" = "0"
+
+      # ── Step 2: Update API service
+      - name: Update API task definition + service
+        id: api-deploy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition-arn: >-
+            ${{ env.ECR_REGISTRY }}/rally-api:${{ env.IMAGE_TAG }}
+          cluster: ${{ vars.ECS_CLUSTER }}
+          service: ${{ vars.ECS_API_SERVICE }}
+          wait-for-service-stability: true
+          # Update the image in the task definition before deploying
+          container-name: api
+          image: ${{ env.ECR_REGISTRY }}/rally-api:${{ env.IMAGE_TAG }}
+
+      # ── Step 3: Update Worker service
+      - name: Update Worker task definition + service
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          cluster: ${{ vars.ECS_CLUSTER }}
+          service: ${{ vars.ECS_WORKER_SERVICE }}
+          wait-for-service-stability: true
+          container-name: worker
+          image: ${{ env.ECR_REGISTRY }}/rally-worker:${{ env.IMAGE_TAG }}
+
+      - name: Deployment summary
+        run: |
+          echo "### Deployment complete ✅" >> "$GITHUB_STEP_SUMMARY"
+          echo "| | |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Environment** | \`$ENVIRONMENT\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Image tag** | \`$IMAGE_TAG\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Commit** | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
