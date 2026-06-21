@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
 import { TerminusModule } from '@nestjs/terminus';
+import { APP_GUARD } from '@nestjs/core';
 import { AppConfigModule } from './config/config.module';
 import { AppConfigService } from './config/app-config.service';
 import { DatabaseModule } from './database/database.module';
@@ -10,6 +11,7 @@ import { RequestContextService } from './context/request-context';
 import { JwtStrategy } from './auth/jwt.strategy';
 import { JwtAuthGuard } from './auth/jwt.guard';
 import { PermissionGuard } from './auth/permission.guard';
+import { RateLimitGuard } from './rate-limit/rate-limit.guard';
 import { OutboxService } from './outbox/outbox.service';
 import { TenantRlsService } from './database/tenant-rls.service';
 import { EmailService } from './email/email.service';
@@ -56,6 +58,9 @@ import { ResilienceModule } from './resilience/resilience.module';
     JwtStrategy,
     JwtAuthGuard,
     PermissionGuard,
+    // Global rate-limit guard — applies to every route.
+    // Use @RateLimit('TIER') to override, @SkipRateLimit() to opt out.
+    { provide: APP_GUARD, useClass: RateLimitGuard },
     OutboxService,
     TenantRlsService,
     EmailService,
@@ -70,6 +75,7 @@ import { ResilienceModule } from './resilience/resilience.module';
     RequestContextService,
     JwtAuthGuard,
     PermissionGuard,
+    RateLimitGuard,
     OutboxService,
     TenantRlsService,
     EmailService,

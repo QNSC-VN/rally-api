@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Patch, Post, Req, Res } from '@nestjs/
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import '@fastify/cookie';
-import { Auth, ApiCommonErrors, Public, UnauthorizedException } from '@platform';
+import { Auth, ApiCommonErrors, Public, UnauthorizedException, RateLimit } from '@platform';
 import type { JwtPayload } from '@platform';
 import { AuthService } from '../../application/auth.service';
 import {
@@ -32,6 +32,7 @@ export class AuthController {
 
   @Post('login')
   @Public()
+  @RateLimit('AUTH_LOGIN')
   @HttpCode(200)
   @ApiOperation({ summary: 'Authenticate with email + password' })
   @ApiResponse({ status: 200, type: AuthTokenResponseDto })
@@ -60,6 +61,7 @@ export class AuthController {
 
   @Post('refresh')
   @Public()
+  @RateLimit('AUTH_REFRESH')
   @HttpCode(200)
   @ApiOperation({ summary: 'Rotate refresh token and issue new access token' })
   @ApiResponse({
@@ -185,6 +187,7 @@ export class AuthController {
 
   @Post('forgot-password')
   @Public()
+  @RateLimit('AUTH_FORGOT')
   @HttpCode(200)
   @ApiOperation({ summary: 'Request a password reset link (always returns 200)' })
   @ApiResponse({ status: 200, schema: { properties: { message: { type: 'string' } } } })
@@ -197,6 +200,7 @@ export class AuthController {
 
   @Post('reset-password')
   @Public()
+  @RateLimit('AUTH_FORGOT')
   @HttpCode(204)
   @ApiOperation({ summary: 'Reset password using a token from forgot-password email' })
   @ApiResponse({ status: 204, description: 'Password reset successful' })

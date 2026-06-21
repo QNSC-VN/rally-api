@@ -8,6 +8,7 @@ export * from './cache/index';
 export * from './errors/index';
 export * from './http/index';
 export * from './auth/index';
+export * from './rate-limit/index';
 export * from './outbox/index';
 export * from './email/index';
 export * from './database/tenant-rls.service';
