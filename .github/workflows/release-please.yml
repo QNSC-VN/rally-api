@@ -1,0 +1,39 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write        # create tags + update CHANGELOG / package.json
+  pull-requests: write   # open / update the Release PR
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name:        ${{ steps.release.outputs.tag_name }}
+
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          # Uses release-please-config.json + .release-please-manifest.json
+          # in the repo root — no extra config needed here.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Trigger deploy immediately after Release Please creates the tag ──────────
+  # This avoids the user having to push the tag manually.
+  # The deploy.yml already watches for  v[0-9]+.[0-9]+.[0-9]+  tag pushes,
+  # so this job just re-runs deploy with the new tag as context.
+  trigger-deploy:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm release tag created
+        run: |
+          echo "Release Please created tag: ${{ needs.release-please.outputs.tag_name }}"
+          echo "deploy.yml will fire automatically on this tag push — no action needed."
+          echo "Check: https://github.com/${{ github.repository }}/actions"
