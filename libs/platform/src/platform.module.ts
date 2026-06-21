@@ -11,6 +11,8 @@ import { JwtStrategy } from './auth/jwt.strategy';
 import { JwtAuthGuard } from './auth/jwt.guard';
 import { PermissionGuard } from './auth/permission.guard';
 import { OutboxService } from './outbox/outbox.service';
+import { TenantRlsService } from './database/tenant-rls.service';
+import { EmailService } from './email/email.service';
 import { HealthController } from './observability/health.controller';
 import { Algorithm } from 'jsonwebtoken';
 import { IdempotencyInterceptor } from './http/idempotency.interceptor';
@@ -55,6 +57,8 @@ import { ResilienceModule } from './resilience/resilience.module';
     JwtAuthGuard,
     PermissionGuard,
     OutboxService,
+    TenantRlsService,
+    EmailService,
     IdempotencyInterceptor,
     HttpLoggingInterceptor,
   ],
@@ -68,6 +72,8 @@ import { ResilienceModule } from './resilience/resilience.module';
     JwtAuthGuard,
     PermissionGuard,
     OutboxService,
+    TenantRlsService,
+    EmailService,
     IdempotencyInterceptor,
     HttpLoggingInterceptor,
     ResilienceModule,

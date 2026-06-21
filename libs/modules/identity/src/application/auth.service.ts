@@ -9,6 +9,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   Span,
+  EmailService,
 } from '@platform';
 import type { JwtPayload } from '@platform';
 import { IUserRepository, USER_REPOSITORY } from '../domain/ports/user.repository';
@@ -41,6 +42,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly valkey: ValkeyService,
     private readonly config: AppConfigService,
+    private readonly emailService: EmailService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -330,12 +332,9 @@ export class AuthService {
 
     await this.userRepo.createPasswordResetToken(user.id, tokenHash, expiresAt);
 
-    // TODO: send email with reset link containing rawToken
-    // In dev we log the token so the flow can be tested without an email service
-    this.logger.warn(
-      { userId: user.id, token: rawToken },
-      'Password reset token issued (dev-mode log)',
-    );
+    const baseUrl = this.config.get('APP_BASE_URL');
+    const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
+    await this.emailService.sendPasswordReset(user.email, resetUrl);
   }
 
   // ---------------------------------------------------------------------------

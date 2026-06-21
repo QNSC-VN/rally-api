@@ -47,6 +47,12 @@ export const EnvSchema = z.object({
   SQS_SEARCH_URL: z.string().optional(),
   S3_ATTACHMENTS_BUCKET: z.string().default('rally-attachments'),
 
+  // Email (AWS SES)
+  /** Verified sender address. When not set, EmailService logs instead of sending. */
+  SES_FROM_EMAIL: z.string().email().optional(),
+  /** Public base URL used to build password-reset and invitation links (e.g. https://app.rally.io). */
+  APP_BASE_URL: z.string().url().default('http://localhost:5173'),
+
   // Observability
   OTEL_ENABLED: z
     .string()

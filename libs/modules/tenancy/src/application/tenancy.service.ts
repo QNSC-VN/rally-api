@@ -8,6 +8,7 @@ import {
   PreconditionFailedException,
   AppConfigService,
   Span,
+  EmailService,
 } from '@platform';
 import type { JwtPayload, CursorPayload, PagedResult } from '@platform';
 import { ITenantRepository, TENANT_REPOSITORY } from '../domain/ports/tenant.repository';
@@ -48,6 +49,7 @@ export class TenancyService {
     @Inject(WORKSPACE_SETTINGS_REPOSITORY)
     private readonly settingsRepo: IWorkspaceSettingsRepository,
     private readonly config: AppConfigService,
+    private readonly emailService: EmailService,
   ) {}
 
   // ── Tenant ──────────────────────────────────────────────────────────────────
@@ -236,7 +238,7 @@ export class TenancyService {
     roleId: string | undefined,
     actorId: string,
   ): Promise<WorkspaceInvitation> {
-    await this.getWorkspace(tenantId, workspaceId);
+    const workspace = await this.getWorkspace(tenantId, workspaceId);
 
     // Rotate on resend (COMPANY-FR-005): cancel any existing pending invite
     await this.invitationRepo.cancelExistingForEmail(workspaceId, email.toLowerCase().trim());
@@ -257,10 +259,13 @@ export class TenancyService {
       expiresAt,
     });
 
-    // TODO: send invitation email with rawToken
-    this.logger.warn(
-      { invitationId: invitation.id, token: rawToken },
-      'Invitation created (dev-mode token log)',
+    const baseUrl = this.config.get('APP_BASE_URL');
+    const inviteUrl = `${baseUrl}/accept-invitation?token=${rawToken}`;
+    await this.emailService.sendWorkspaceInvitation(
+      email.toLowerCase().trim(),
+      workspace.name,
+      inviteUrl,
+      invitationTtlDays,
     );
     return invitation;
   }
