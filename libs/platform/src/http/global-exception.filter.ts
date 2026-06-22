@@ -12,6 +12,34 @@ import { DomainException } from '../errors/exceptions';
 import { ErrorCodes } from '../errors/error-codes';
 import { RequestContextService } from '../context/request-context';
 
+/** Map a raw HTTP status (from a framework HttpException) to a stable error code. */
+function httpStatusToErrorCode(status: number): string {
+  switch (status) {
+    case 400:
+      return ErrorCodes.BAD_REQUEST;
+    case 401:
+      return ErrorCodes.UNAUTHORIZED;
+    case 403:
+      return ErrorCodes.FORBIDDEN;
+    case 404:
+      return ErrorCodes.NOT_FOUND;
+    case 405:
+      return ErrorCodes.METHOD_NOT_ALLOWED;
+    case 409:
+      return ErrorCodes.CONFLICT;
+    case 413:
+      return ErrorCodes.PAYLOAD_TOO_LARGE;
+    case 415:
+      return ErrorCodes.UNSUPPORTED_MEDIA_TYPE;
+    case 422:
+      return ErrorCodes.VALIDATION_FAILED;
+    case 429:
+      return ErrorCodes.RATE_LIMITED;
+    default:
+      return ErrorCodes.INTERNAL_ERROR;
+  }
+}
+
 /**
  * Global exception filter — maps every thrown error to one stable wire envelope:
  * { error: { code, message, details, correlationId, traceId } }
@@ -63,8 +91,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       const res = exception.getResponse();
       void reply.status(status).send({
         error: {
-          code: ErrorCodes.INTERNAL_ERROR,
-          message: typeof res === 'string' ? res : ((res as Record<string, unknown>)['message'] as string) ?? 'Error',
+          code: httpStatusToErrorCode(status),
+          message:
+            typeof res === 'string'
+              ? res
+              : (((res as Record<string, unknown>)['message'] as string) ?? 'Error'),
           details: [],
           correlationId,
         },

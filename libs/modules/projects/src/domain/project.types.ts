@@ -65,6 +65,7 @@ export interface UpdateProjectInput {
 /** Project enriched with aggregated stats for the list endpoint */
 export interface ProjectWithStats extends Project {
   memberCount: number;
+  teamCount: number;
   leadName: string | null;
 }
 

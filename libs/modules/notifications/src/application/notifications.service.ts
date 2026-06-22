@@ -36,6 +36,10 @@ export class NotificationsService {
     await this.notificationRepo.markAllRead(actor.tenantId, actor.sub);
   }
 
+  async getUnreadCount(actor: JwtPayload): Promise<number> {
+    return this.notificationRepo.countUnread(actor.tenantId, actor.sub);
+  }
+
   /** Internal use — called by other services / event handlers to emit notifications. */
   async send(input: Omit<CreateNotificationInput, 'id'>): Promise<Notification | null> {
     const notification = await this.notificationRepo.create({

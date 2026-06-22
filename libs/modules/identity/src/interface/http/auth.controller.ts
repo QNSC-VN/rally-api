@@ -1,10 +1,18 @@
-import { Body, Controller, Get, HttpCode, Patch, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Patch, Post, Query, Req, Res } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import '@fastify/cookie';
-import { Auth, ApiCommonErrors, Public, UnauthorizedException, RateLimit } from '@platform';
+import {
+  Auth,
+  ApiCommonErrors,
+  Public,
+  UnauthorizedException,
+  RateLimit,
+  UseIdempotency,
+} from '@platform';
 import type { JwtPayload } from '@platform';
 import { AuthService } from '../../application/auth.service';
+import { AccessService } from '@modules/access';
 import {
   LoginDto,
   ChangePasswordDto,
@@ -26,7 +34,10 @@ const COOKIE_BASE = {
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly accessService: AccessService,
+  ) {}
 
   // ── POST /auth/login ───────────────────────────────────────────────────────
 
@@ -115,7 +126,10 @@ export class AuthController {
   @ApiResponse({ status: 200, type: UserProfileResponseDto })
   @ApiCommonErrors(401)
   async getMe(@CurrentUser() user: JwtPayload): Promise<UserProfileResponseDto> {
-    const profile = await this.authService.getMe(user.sub);
+    const [profile, { role, permissions }] = await Promise.all([
+      this.authService.getMe(user.sub),
+      this.accessService.getUserRoleAndPermissions(user.sub, user.tenantId),
+    ]);
     return {
       id: profile.id,
       email: profile.email,
@@ -123,6 +137,8 @@ export class AuthController {
       avatarUrl: profile.avatarUrl,
       locale: profile.locale,
       timezone: profile.timezone,
+      role,
+      permissions,
       emailVerified: profile.emailVerified,
       createdAt: profile.createdAt.toISOString(),
       updatedAt: profile.updatedAt.toISOString(),
@@ -140,7 +156,10 @@ export class AuthController {
     @CurrentUser() user: JwtPayload,
     @Body() dto: UpdateProfileDto,
   ): Promise<UserProfileResponseDto> {
-    const profile = await this.authService.updateProfile(user.sub, dto);
+    const [profile, { role, permissions }] = await Promise.all([
+      this.authService.updateProfile(user.sub, dto),
+      this.accessService.getUserRoleAndPermissions(user.sub, user.tenantId),
+    ]);
     return {
       id: profile.id,
       email: profile.email,
@@ -148,6 +167,8 @@ export class AuthController {
       avatarUrl: profile.avatarUrl,
       locale: profile.locale,
       timezone: profile.timezone,
+      role,
+      permissions,
       emailVerified: profile.emailVerified,
       createdAt: profile.createdAt.toISOString(),
       updatedAt: profile.updatedAt.toISOString(),
@@ -190,12 +211,59 @@ export class AuthController {
   @Post('forgot-password')
   @Public()
   @RateLimit('AUTH_FORGOT')
+  @UseIdempotency()
   @HttpCode(200)
   @ApiOperation({ summary: 'Request a password reset link (always returns 200)' })
-  @ApiResponse({ status: 200, schema: { properties: { message: { type: 'string' } } } })
-  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ message: string }> {
-    await this.authService.forgotPassword(dto.email);
-    return { message: 'If that email exists, a password reset link has been sent.' };
+  @ApiResponse({
+    status: 200,
+    schema: {
+      properties: {
+        message: { type: 'string' },
+        devResetUrl: {
+          type: 'string',
+          description: 'Dev-only: reset URL (not present in production)',
+        },
+      },
+    },
+  })
+  async forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+  ): Promise<{ message: string; devResetUrl?: string }> {
+    const result = await this.authService.forgotPassword(dto.email);
+    return {
+      message: 'If that email exists, a password reset link has been sent.',
+      ...(result.devResetUrl ? { devResetUrl: result.devResetUrl } : {}),
+    };
+  }
+
+  // ── GET /auth/verify-reset-token ─────────────────────────────────────────────
+  // Read-only — validates token state without consuming it.
+  // Enterprise: called on reset-password page mount so users see expired/invalid
+  // errors immediately, before filling in the form.
+
+  @Get('verify-reset-token')
+  @Public()
+  @RateLimit('AUTH_FORGOT')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Validate a password-reset token without consuming it' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      properties: {
+        valid: { type: 'boolean' },
+        reason: {
+          type: 'string',
+          enum: ['invalid', 'expired', 'used'],
+          description: 'Only present when valid=false',
+        },
+      },
+    },
+  })
+  async verifyResetToken(
+    @Query('token') token: string,
+  ): Promise<{ valid: boolean; reason?: 'invalid' | 'expired' | 'used' }> {
+    if (!token) return { valid: false, reason: 'invalid' };
+    return this.authService.verifyResetToken(token);
   }
 
   // ── POST /auth/reset-password ──────────────────────────────────────────────

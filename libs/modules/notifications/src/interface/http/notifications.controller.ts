@@ -29,6 +29,15 @@ function toDto(n: Notification): NotificationResponseDto {
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
+  @Get('unread-count')
+  @ApiOperation({ summary: 'Get number of unread notifications for the current user' })
+  @ApiResponse({ status: 200, schema: { properties: { count: { type: 'number' } } } })
+  @ApiCommonErrors(401)
+  async unreadCount(@CurrentUser() user: JwtPayload): Promise<{ count: number }> {
+    const count = await this.notificationsService.getUnreadCount(user);
+    return { count };
+  }
+
   @Get()
   @ApiOperation({ summary: 'List notifications for the current user' })
   @ApiResponse({ status: 200, type: [NotificationResponseDto] })

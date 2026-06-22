@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { InjectDrizzle } from '@platform';
-import type { DrizzleDB } from '@platform';
+import type { DrizzleDB, DbExecutor } from '@platform';
 import { workflowStatuses, workflowTransitions } from '../../../../../../db/schema/work';
 import type {
   WorkflowStatus,
@@ -33,8 +33,8 @@ export class WorkflowStatusDrizzleRepository implements IWorkflowStatusRepositor
     return rows as WorkflowStatus[];
   }
 
-  async create(input: CreateWorkflowStatusInput): Promise<WorkflowStatus> {
-    const rows = await this.db
+  async create(input: CreateWorkflowStatusInput, tx?: DbExecutor): Promise<WorkflowStatus> {
+    const rows = await (tx ?? this.db)
       .insert(workflowStatuses)
       .values({
         id: input.id,
@@ -51,16 +51,17 @@ export class WorkflowStatusDrizzleRepository implements IWorkflowStatusRepositor
   }
 
   async updatePositions(projectId: string, orderedIds: string[]): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      for (let i = 0; i < orderedIds.length; i++) {
-        await tx
-          .update(workflowStatuses)
-          .set({ position: i })
-          .where(
-            and(eq(workflowStatuses.id, orderedIds[i]!), eq(workflowStatuses.projectId, projectId)),
-          );
-      }
-    });
+    if (orderedIds.length === 0) return;
+
+    // Single atomic statement: position = CASE id WHEN ... END, instead of one
+    // UPDATE per status. Scales O(1) round trips regardless of column count.
+    const cases = orderedIds.map((id, i) => sql`when ${workflowStatuses.id} = ${id} then ${i}`);
+    await this.db
+      .update(workflowStatuses)
+      .set({ position: sql`case ${sql.join(cases, sql` `)} end` })
+      .where(
+        and(eq(workflowStatuses.projectId, projectId), inArray(workflowStatuses.id, orderedIds)),
+      );
   }
 
   async delete(id: string): Promise<void> {

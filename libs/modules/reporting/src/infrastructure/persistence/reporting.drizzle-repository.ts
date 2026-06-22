@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { InjectDrizzle } from '@platform';
 import type { DrizzleDB } from '@platform';
 import { sprintDailySnapshots, sprints } from '../../../../../../db/schema/work';
@@ -46,32 +46,38 @@ export class ReportingDrizzleRepository implements IReportingRepository {
 
     if (!completedSprints.length) return [];
 
-    // Get the last snapshot per sprint (represents final state at completion)
-    const result: VelocityPoint[] = [];
-    for (const sprint of completedSprints) {
-      const snapshots = await this.db
-        .select()
-        .from(sprintDailySnapshots)
-        .where(
-          and(
-            eq(sprintDailySnapshots.tenantId, tenantId),
-            eq(sprintDailySnapshots.sprintId, sprint.id),
-          ),
-        )
-        .orderBy(desc(sprintDailySnapshots.snapshotDate))
-        .limit(1);
+    // Fetch the final snapshot for every sprint in ONE query (DISTINCT ON keeps
+    // the newest row per sprint), instead of N round trips — one per sprint.
+    const sprintIds = completedSprints.map((s) => s.id);
+    const latestSnapshots = await this.db
+      .selectDistinctOn([sprintDailySnapshots.sprintId], {
+        sprintId: sprintDailySnapshots.sprintId,
+        completedPoints: sprintDailySnapshots.completedPoints,
+        completedItems: sprintDailySnapshots.completedItems,
+      })
+      .from(sprintDailySnapshots)
+      .where(
+        and(
+          eq(sprintDailySnapshots.tenantId, tenantId),
+          inArray(sprintDailySnapshots.sprintId, sprintIds),
+        ),
+      )
+      .orderBy(sprintDailySnapshots.sprintId, desc(sprintDailySnapshots.snapshotDate));
 
-      const last = snapshots[0];
-      result.push({
-        sprintId: sprint.id,
-        sprintName: sprint.name,
-        completedPoints: last?.completedPoints ?? 0,
-        completedItems: last?.completedItems ?? 0,
-      });
-    }
+    const snapshotBySprintId = new Map(latestSnapshots.map((s) => [s.sprintId, s]));
 
-    // Return in chronological order
-    return result.reverse();
+    // completedSprints is ordered newest-first; reverse for chronological output.
+    return completedSprints
+      .map((sprint) => {
+        const last = snapshotBySprintId.get(sprint.id);
+        return {
+          sprintId: sprint.id,
+          sprintName: sprint.name,
+          completedPoints: last?.completedPoints ?? 0,
+          completedItems: last?.completedItems ?? 0,
+        };
+      })
+      .reverse();
   }
 
   async upsertSnapshot(snapshot: Omit<SprintSnapshot, 'id' | 'createdAt'>): Promise<void> {

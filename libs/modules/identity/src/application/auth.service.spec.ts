@@ -9,7 +9,8 @@ import {
   UnauthorizedException,
   NotFoundException,
   AppConfigService,
-  EmailService,
+  EmailSchedulerService,
+  TenantRlsService,
 } from '@platform';
 import { ValkeyService } from '@platform';
 
@@ -78,6 +79,7 @@ const makeConfig = (overrides: Record<string, unknown> = {}) => ({
     const defaults: Record<string, unknown> = {
       JWT_PRIVATE_KEY: 'test-private-key',
       JWT_PUBLIC_KEY: 'test-public-key',
+      JWT_ACCESS_EXPIRY: '15m',
       JWT_REFRESH_EXPIRY: '30d',
       JWT_ISSUER: 'rally',
       JWT_AUDIENCE: 'rally-app',
@@ -89,9 +91,14 @@ const makeConfig = (overrides: Record<string, unknown> = {}) => ({
   }),
 });
 
-const makeEmailService = () => ({
-  sendPasswordReset: vi.fn().mockResolvedValue(undefined),
-  sendWorkspaceInvitation: vi.fn().mockResolvedValue(undefined),
+const makeEmailScheduler = () => ({
+  schedule: vi.fn().mockResolvedValue(undefined),
+});
+
+// Executes the wrapped unit of work immediately with a stub transaction, so the
+// repository mocks receive a (truthy) tx argument just like production.
+const makeRls = () => ({
+  withTenantContext: vi.fn((_tenantId: string, fn: (tx: unknown) => unknown) => fn({})),
 });
 
 const makeJwt = () => ({
@@ -106,7 +113,8 @@ describe('AuthService', () => {
   let sessionRepo: ReturnType<typeof makeSessionRepo>;
   let valkey: ReturnType<typeof makeValkey>;
   let config: ReturnType<typeof makeConfig>;
-  let emailService: ReturnType<typeof makeEmailService>;
+  let emailScheduler: ReturnType<typeof makeEmailScheduler>;
+  let rls: ReturnType<typeof makeRls>;
   let jwt: ReturnType<typeof makeJwt>;
 
   beforeEach(async () => {
@@ -114,7 +122,8 @@ describe('AuthService', () => {
     sessionRepo = makeSessionRepo();
     valkey = makeValkey();
     config = makeConfig();
-    emailService = makeEmailService();
+    emailScheduler = makeEmailScheduler();
+    rls = makeRls();
     jwt = makeJwt();
 
     const module: TestingModule = await Test.createTestingModule({
@@ -125,7 +134,8 @@ describe('AuthService', () => {
         { provide: JwtService, useValue: jwt },
         { provide: ValkeyService, useValue: valkey },
         { provide: AppConfigService, useValue: config },
-        { provide: EmailService, useValue: emailService },
+        { provide: EmailSchedulerService, useValue: emailScheduler },
+        { provide: TenantRlsService, useValue: rls },
       ],
     }).compile();
 
@@ -150,7 +160,7 @@ describe('AuthService', () => {
       expect(result.refreshToken).toBeDefined();
       expect(result.user.email).toBe('alice@example.com');
       expect(sessionRepo.create).toHaveBeenCalledOnce();
-      expect(userRepo.updateLastLogin).toHaveBeenCalledWith(user.id);
+      expect(userRepo.updateLastLogin).toHaveBeenCalledWith(user.id, expect.anything());
     });
 
     it('normalises email to lowercase', async () => {
@@ -206,7 +216,7 @@ describe('AuthService', () => {
 
       expect(result.accessToken).toBe('mock-access-token');
       expect(result.refreshToken).toBeDefined();
-      expect(sessionRepo.revokeById).toHaveBeenCalledWith(session.id);
+      expect(sessionRepo.revokeById).toHaveBeenCalledWith(session.id, expect.anything());
       expect(sessionRepo.create).toHaveBeenCalledOnce();
     });
 
@@ -388,38 +398,49 @@ describe('AuthService', () => {
         'user-1',
         expect.any(String),
         expect.any(Date),
+        expect.anything(),
       );
-      expect(emailService.sendPasswordReset).toHaveBeenCalledWith(
-        'alice@example.com',
-        expect.stringContaining('/reset-password?token='),
+      expect(emailScheduler.schedule).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'alice@example.com',
+          template: 'password-reset',
+          vars: expect.objectContaining({
+            resetUrl: expect.stringContaining('/reset-password?token='),
+          }),
+        }),
+        expect.anything(),
       );
     });
 
     it('silently does nothing when user not found (user enumeration prevention)', async () => {
       userRepo.findByEmail.mockResolvedValue(null);
-      await expect(service.forgotPassword('nobody@example.com')).resolves.toBeUndefined();
-      expect(emailService.sendPasswordReset).not.toHaveBeenCalled();
+      await expect(service.forgotPassword('nobody@example.com')).resolves.toEqual({});
+      expect(emailScheduler.schedule).not.toHaveBeenCalled();
     });
 
     it('silently does nothing for deleted user', async () => {
       userRepo.findByEmail.mockResolvedValue(mockUser({ deletedAt: new Date() }));
-      await expect(service.forgotPassword('alice@example.com')).resolves.toBeUndefined();
-      expect(emailService.sendPasswordReset).not.toHaveBeenCalled();
+      await expect(service.forgotPassword('alice@example.com')).resolves.toEqual({});
+      expect(emailScheduler.schedule).not.toHaveBeenCalled();
     });
 
     it('silently does nothing for non-active user', async () => {
       userRepo.findByEmail.mockResolvedValue(mockUser({ status: 'suspended' }));
-      await expect(service.forgotPassword('alice@example.com')).resolves.toBeUndefined();
-      expect(emailService.sendPasswordReset).not.toHaveBeenCalled();
+      await expect(service.forgotPassword('alice@example.com')).resolves.toEqual({});
+      expect(emailScheduler.schedule).not.toHaveBeenCalled();
     });
 
     it('uses APP_BASE_URL from config to build reset URL', async () => {
       userRepo.findByEmail.mockResolvedValue(mockUser({ status: 'active' }));
       await service.forgotPassword('alice@example.com');
 
-      expect(emailService.sendPasswordReset).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.stringContaining('http://localhost:5173'),
+      expect(emailScheduler.schedule).toHaveBeenCalledWith(
+        expect.objectContaining({
+          vars: expect.objectContaining({
+            resetUrl: expect.stringContaining('http://localhost:5173'),
+          }),
+        }),
+        expect.anything(),
       );
     });
   });
@@ -438,12 +459,20 @@ describe('AuthService', () => {
 
     it('updates password and revokes all sessions on success', async () => {
       userRepo.findPasswordResetToken.mockResolvedValue(makeResetToken());
+      userRepo.findById.mockResolvedValue(mockUser());
 
       await service.resetPassword('raw-token', 'new-secure-password');
 
-      expect(userRepo.updatePasswordHash).toHaveBeenCalledWith('user-1', expect.any(String));
-      expect(userRepo.markPasswordResetTokenUsed).toHaveBeenCalledWith('reset-token-id');
-      expect(sessionRepo.revokeAllForUser).toHaveBeenCalledWith('user-1');
+      expect(userRepo.updatePasswordHash).toHaveBeenCalledWith(
+        'user-1',
+        expect.any(String),
+        expect.anything(),
+      );
+      expect(userRepo.markPasswordResetTokenUsed).toHaveBeenCalledWith(
+        'reset-token-id',
+        expect.anything(),
+      );
+      expect(sessionRepo.revokeAllForUser).toHaveBeenCalledWith('user-1', expect.anything());
     });
 
     it('throws when token not found', async () => {

@@ -1,4 +1,4 @@
-import type { CursorPayload, PagedResult } from '@platform';
+import type { CursorPayload, PagedResult, DbExecutor } from '@platform';
 import type {
   Project,
   ProjectWithStats,
@@ -21,9 +21,9 @@ export interface IProjectRepository {
     tenantId: string,
     args: { limit: number; cursor: CursorPayload | null },
   ): Promise<PagedResult<ProjectWithStats>>;
-  create(input: CreateProjectInput): Promise<Project>;
+  create(input: CreateProjectInput, tx?: DbExecutor): Promise<Project>;
   update(id: string, input: UpdateProjectInput): Promise<Project>;
   softDelete(id: string): Promise<void>;
-  initCounter(projectId: string, tenantId: string): Promise<void>;
+  initCounter(projectId: string, tenantId: string, tx?: DbExecutor): Promise<void>;
   incrementCounter(projectId: string): Promise<number>;
 }

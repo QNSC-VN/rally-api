@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { InjectDrizzle } from '@platform';
-import type { DrizzleDB } from '@platform';
+import type { DrizzleDB, DbExecutor } from '@platform';
 import { authSessions } from '../../../../../../db/schema/identity';
 import type { AuthSession, CreateSessionInput } from '../../domain/user.types';
 import { IAuthSessionRepository } from '../../domain/ports/auth-session.repository';
@@ -19,8 +19,8 @@ export class AuthSessionDrizzleRepository implements IAuthSessionRepository {
     return rows[0] ?? null;
   }
 
-  async create(input: CreateSessionInput): Promise<void> {
-    await this.db.insert(authSessions).values({
+  async create(input: CreateSessionInput, tx?: DbExecutor): Promise<void> {
+    await (tx ?? this.db).insert(authSessions).values({
       id: input.id,
       tenantId: input.tenantId,
       userId: input.userId,
@@ -31,19 +31,22 @@ export class AuthSessionDrizzleRepository implements IAuthSessionRepository {
     });
   }
 
-  async revokeById(id: string): Promise<void> {
-    await this.db.update(authSessions).set({ isRevoked: true }).where(eq(authSessions.id, id));
+  async revokeById(id: string, tx?: DbExecutor): Promise<void> {
+    await (tx ?? this.db)
+      .update(authSessions)
+      .set({ isRevoked: true })
+      .where(eq(authSessions.id, id));
   }
 
-  async revokeFamily(familyId: string): Promise<void> {
-    await this.db
+  async revokeFamily(familyId: string, tx?: DbExecutor): Promise<void> {
+    await (tx ?? this.db)
       .update(authSessions)
       .set({ isRevoked: true })
       .where(eq(authSessions.familyId, familyId));
   }
 
-  async revokeAllForUser(userId: string): Promise<void> {
-    await this.db
+  async revokeAllForUser(userId: string, tx?: DbExecutor): Promise<void> {
+    await (tx ?? this.db)
       .update(authSessions)
       .set({ isRevoked: true })
       .where(eq(authSessions.userId, userId));

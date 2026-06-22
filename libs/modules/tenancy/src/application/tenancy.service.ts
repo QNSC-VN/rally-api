@@ -8,7 +8,10 @@ import {
   PreconditionFailedException,
   AppConfigService,
   Span,
-  EmailService,
+  EmailSchedulerService,
+  UnitOfWork,
+  TenantRlsService,
+  addDays,
 } from '@platform';
 import type { JwtPayload, CursorPayload, PagedResult } from '@platform';
 import { ITenantRepository, TENANT_REPOSITORY } from '../domain/ports/tenant.repository';
@@ -49,7 +52,9 @@ export class TenancyService {
     @Inject(WORKSPACE_SETTINGS_REPOSITORY)
     private readonly settingsRepo: IWorkspaceSettingsRepository,
     private readonly config: AppConfigService,
-    private readonly emailService: EmailService,
+    private readonly emailScheduler: EmailSchedulerService,
+    private readonly uow: UnitOfWork,
+    private readonly rls: TenantRlsService,
   ) {}
 
   // ── Tenant ──────────────────────────────────────────────────────────────────
@@ -87,22 +92,34 @@ export class TenancyService {
       throw new ConflictException('WORKSPACE_SLUG_TAKEN', `Slug "${slug}" is already taken`);
     }
 
-    const workspace = await this.workspaceRepo.create({
-      id: uuidv7(),
-      tenantId: actor.tenantId,
-      slug,
-      name,
-      description,
-      avatarUrl,
-    });
+    // Atomic: create the workspace and enroll the creator as admin together.
+    // A partial failure here would otherwise orphan a workspace its own creator
+    // cannot access.
+    const workspace = await this.uow.run(async (tx) => {
+      const ws = await this.workspaceRepo.create(
+        {
+          id: uuidv7(),
+          tenantId: actor.tenantId,
+          slug,
+          name,
+          description,
+          avatarUrl,
+        },
+        tx,
+      );
 
-    // Add creator as member automatically
-    await this.memberRepo.addMember({
-      id: uuidv7(),
-      tenantId: actor.tenantId,
-      workspaceId: workspace.id,
-      userId: actor.sub,
-      roleId: 'admin',
+      await this.memberRepo.addMember(
+        {
+          id: uuidv7(),
+          tenantId: actor.tenantId,
+          workspaceId: ws.id,
+          userId: actor.sub,
+          roleId: 'admin',
+        },
+        tx,
+      );
+
+      return ws;
     });
 
     this.logger.log({ workspaceId: workspace.id, userId: actor.sub }, 'Workspace created');
@@ -240,33 +257,57 @@ export class TenancyService {
   ): Promise<WorkspaceInvitation> {
     const workspace = await this.getWorkspace(tenantId, workspaceId);
 
-    // Rotate on resend (COMPANY-FR-005): cancel any existing pending invite
-    await this.invitationRepo.cancelExistingForEmail(workspaceId, email.toLowerCase().trim());
-
+    const normalizedEmail = email.toLowerCase().trim();
     const rawToken = randomBytes(32).toString('base64url');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
     const invitationTtlDays = this.config.get('INVITATION_TTL_DAYS');
-    const expiresAt = new Date(Date.now() + invitationTtlDays * 24 * 60 * 60 * 1000);
-
-    const invitation = await this.invitationRepo.create({
-      id: uuidv7(),
-      tenantId,
-      workspaceId,
-      email: email.toLowerCase().trim(),
-      roleId,
-      tokenHash,
-      invitedBy: actorId,
-      expiresAt,
-    });
+    const expiresAt = addDays(invitationTtlDays);
 
     const baseUrl = this.config.get('APP_BASE_URL');
     const inviteUrl = `${baseUrl}/accept-invitation?token=${rawToken}`;
-    await this.emailService.sendWorkspaceInvitation(
-      email.toLowerCase().trim(),
-      workspace.name,
-      inviteUrl,
-      invitationTtlDays,
-    );
+
+    // Atomic: rotate any prior pending invite, create the new one, and enqueue
+    // the email in ONE transaction. Either the invitee gets a row AND an email,
+    // or nothing is persisted — no dangling invites without a delivery, and no
+    // emails pointing at a rolled-back invitation.
+    // idempotencyKey = invitation.id: retrying this HTTP request skips the
+    // duplicate email_outbox insert.
+    const invitation = await this.uow.run(async (tx) => {
+      // Rotate on resend (COMPANY-FR-005): cancel any existing pending invite
+      await this.invitationRepo.cancelExistingForEmail(workspaceId, normalizedEmail, tx);
+
+      const inv = await this.invitationRepo.create(
+        {
+          id: uuidv7(),
+          tenantId,
+          workspaceId,
+          email: normalizedEmail,
+          roleId,
+          tokenHash,
+          invitedBy: actorId,
+          expiresAt,
+        },
+        tx,
+      );
+
+      await this.emailScheduler.schedule(
+        {
+          to: normalizedEmail,
+          template: 'workspace-invitation',
+          vars: {
+            inviteUrl,
+            workspaceName: workspace.name,
+            expiresInDays: String(invitationTtlDays),
+            recipientEmail: normalizedEmail,
+          },
+          idempotencyKey: inv.id,
+        },
+        tx,
+      );
+
+      return inv;
+    });
+
     return invitation;
   }
 
@@ -320,17 +361,28 @@ export class TenancyService {
     }
 
     const existing = await this.memberRepo.findMember(invitation.workspaceId, acceptingUserId);
-    if (!existing) {
-      await this.memberRepo.addMember({
-        id: uuidv7(),
-        tenantId: invitation.tenantId,
-        workspaceId: invitation.workspaceId,
-        userId: acceptingUserId,
-        roleId: invitation.roleId ?? undefined,
-      });
-    }
 
-    await this.invitationRepo.updateStatus(invitation.id, 'accepted', acceptingUserId);
+    // Atomic: enroll the member (if not already one) and mark the invitation
+    // accepted together. A partial failure would otherwise let the same
+    // invitation be redeemed twice. Tenant context is the invitation's tenant,
+    // which is the tenant of every row written here.
+    await this.rls.withTenantContext(invitation.tenantId, async (tx) => {
+      if (!existing) {
+        await this.memberRepo.addMember(
+          {
+            id: uuidv7(),
+            tenantId: invitation.tenantId,
+            workspaceId: invitation.workspaceId,
+            userId: acceptingUserId,
+            roleId: invitation.roleId ?? undefined,
+          },
+          tx,
+        );
+      }
+
+      await this.invitationRepo.updateStatus(invitation.id, 'accepted', acceptingUserId, tx);
+    });
+
     this.logger.log({ invitationId: invitation.id, acceptingUserId }, 'Invitation accepted');
   }
 

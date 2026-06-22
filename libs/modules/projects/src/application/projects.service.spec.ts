@@ -5,8 +5,14 @@ import { WORKFLOW_STATUS_REPOSITORY } from '../domain/ports/workflow-status.repo
 import { LABEL_REPOSITORY } from '../domain/ports/label.repository';
 import { PROJECT_TEAM_REPOSITORY } from '../domain/ports/project-team.repository';
 import { PROJECT_MEMBER_REPOSITORY } from '../domain/ports/project-member.repository';
+import { WORKSPACE_MEMBER_REPOSITORY } from '@modules/tenancy';
 import type { Project, WorkflowStatus } from '../domain/project.types';
-import { NotFoundException, ConflictException, PreconditionFailedException } from '@platform';
+import {
+  NotFoundException,
+  ConflictException,
+  PreconditionFailedException,
+  UnitOfWork,
+} from '@platform';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -100,6 +106,20 @@ const makeProjectMemberRepo = () => ({
   removeMember: vi.fn().mockResolvedValue(undefined),
 });
 
+const makeWorkspaceMemberRepo = () => ({
+  findMember: vi.fn().mockResolvedValue({ userId: 'user-1', status: 'active' }),
+  listMembers: vi.fn().mockResolvedValue([]),
+  addMember: vi.fn().mockResolvedValue(undefined),
+  updateMember: vi.fn().mockResolvedValue(undefined),
+  removeMember: vi.fn().mockResolvedValue(undefined),
+});
+
+// Execute the wrapped work immediately with a stub transaction so repository
+// mocks receive a tx argument exactly as they would in production.
+const makeUow = () => ({
+  run: vi.fn((fn: (tx: unknown) => unknown) => fn({})),
+});
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe('ProjectsService', () => {
@@ -109,6 +129,8 @@ describe('ProjectsService', () => {
   let labelRepo: ReturnType<typeof makeLabelRepo>;
   let projectTeamRepo: ReturnType<typeof makeProjectTeamRepo>;
   let projectMemberRepo: ReturnType<typeof makeProjectMemberRepo>;
+  let workspaceMemberRepo: ReturnType<typeof makeWorkspaceMemberRepo>;
+  let uow: ReturnType<typeof makeUow>;
 
   beforeEach(async () => {
     projectRepo = makeProjectRepo();
@@ -116,6 +138,8 @@ describe('ProjectsService', () => {
     labelRepo = makeLabelRepo();
     projectTeamRepo = makeProjectTeamRepo();
     projectMemberRepo = makeProjectMemberRepo();
+    workspaceMemberRepo = makeWorkspaceMemberRepo();
+    uow = makeUow();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -125,6 +149,8 @@ describe('ProjectsService', () => {
         { provide: LABEL_REPOSITORY, useValue: labelRepo },
         { provide: PROJECT_TEAM_REPOSITORY, useValue: projectTeamRepo },
         { provide: PROJECT_MEMBER_REPOSITORY, useValue: projectMemberRepo },
+        { provide: WORKSPACE_MEMBER_REPOSITORY, useValue: workspaceMemberRepo },
+        { provide: UnitOfWork, useValue: uow },
       ],
     }).compile();
 
@@ -143,6 +169,7 @@ describe('ProjectsService', () => {
       expect(result.key).toBe('PROJ');
       expect(projectRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ key: 'PROJ', name: 'Test Project' }),
+        expect.anything(),
       );
       // 4 default statuses + 1 counter init
       expect(statusRepo.create).toHaveBeenCalledTimes(4);
@@ -154,7 +181,10 @@ describe('ProjectsService', () => {
 
       await service.createProject(mockActor, 'ws-1', 'mykey', 'My Project');
 
-      expect(projectRepo.create).toHaveBeenCalledWith(expect.objectContaining({ key: 'MYKEY' }));
+      expect(projectRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ key: 'MYKEY' }),
+        expect.anything(),
+      );
     });
 
     it('throws ConflictException when key is already taken', async () => {
@@ -198,7 +228,7 @@ describe('ProjectsService', () => {
       projectRepo.findById.mockResolvedValue(mockProject());
       projectRepo.update.mockResolvedValue(mockProject({ name: 'Renamed' }));
 
-      const result = await service.updateProject('tenant-1', 'proj-1', { name: 'Renamed' });
+      const result = await service.updateProject(mockActor, 'proj-1', { name: 'Renamed' });
       expect(result.name).toBe('Renamed');
     });
   });

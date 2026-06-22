@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
 import { InjectDrizzle } from '@platform';
-import type { DrizzleDB } from '@platform';
+import type { DrizzleDB, DbExecutor } from '@platform';
 import { users, passwordResetTokens } from '../../../../../../db/schema/identity';
 import type { User, UserStatus } from '../../domain/user.types';
 import { IUserRepository } from '../../domain/ports/user.repository';
@@ -29,19 +29,22 @@ export class UserDrizzleRepository implements IUserRepository {
     return rows[0] ?? null;
   }
 
-  async updateLastLogin(id: string): Promise<void> {
-    await this.db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, id));
+  async updateLastLogin(id: string, tx?: DbExecutor): Promise<void> {
+    await (tx ?? this.db).update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, id));
   }
 
-  async updatePasswordHash(id: string, passwordHash: string): Promise<void> {
-    await this.db
+  async updatePasswordHash(id: string, passwordHash: string, tx?: DbExecutor): Promise<void> {
+    await (tx ?? this.db)
       .update(users)
       .set({ passwordHash, updatedAt: new Date() })
       .where(eq(users.id, id));
   }
 
-  async updateStatus(id: string, status: UserStatus): Promise<void> {
-    await this.db.update(users).set({ status, updatedAt: new Date() }).where(eq(users.id, id));
+  async updateStatus(id: string, status: UserStatus, tx?: DbExecutor): Promise<void> {
+    await (tx ?? this.db)
+      .update(users)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(users.id, id));
   }
 
   async updateProfile(
@@ -62,8 +65,13 @@ export class UserDrizzleRepository implements IUserRepository {
     return rows[0] as User;
   }
 
-  async createPasswordResetToken(id: string, tokenHash: string, expiresAt: Date): Promise<void> {
-    await this.db.insert(passwordResetTokens).values({
+  async createPasswordResetToken(
+    id: string,
+    tokenHash: string,
+    expiresAt: Date,
+    tx?: DbExecutor,
+  ): Promise<void> {
+    await (tx ?? this.db).insert(passwordResetTokens).values({
       id: uuidv7(),
       userId: id,
       tokenHash,
@@ -92,8 +100,8 @@ export class UserDrizzleRepository implements IUserRepository {
     return rows[0] ?? null;
   }
 
-  async markPasswordResetTokenUsed(id: string): Promise<void> {
-    await this.db
+  async markPasswordResetTokenUsed(id: string, tx?: DbExecutor): Promise<void> {
+    await (tx ?? this.db)
       .update(passwordResetTokens)
       .set({ usedAt: new Date() })
       .where(eq(passwordResetTokens.id, id));

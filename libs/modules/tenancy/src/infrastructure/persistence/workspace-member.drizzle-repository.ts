@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, count, eq, lt } from 'drizzle-orm';
 import { InjectDrizzle, buildPageResult } from '@platform';
-import type { DrizzleDB, CursorPayload, PagedResult } from '@platform';
+import type { DrizzleDB, DbExecutor, CursorPayload, PagedResult } from '@platform';
 import { workspaceMembers } from '../../../../../../db/schema/tenancy';
 import type {
   WorkspaceMember,
@@ -54,8 +54,8 @@ export class WorkspaceMemberDrizzleRepository implements IWorkspaceMemberReposit
     return buildPageResult(rows as WorkspaceMember[], limit, (m) => [m.joinedAt.toISOString()]);
   }
 
-  async addMember(input: AddMemberInput): Promise<WorkspaceMember> {
-    const rows = await this.db
+  async addMember(input: AddMemberInput, tx?: DbExecutor): Promise<WorkspaceMember> {
+    const rows = await (tx ?? this.db)
       .insert(workspaceMembers)
       .values({
         id: input.id,

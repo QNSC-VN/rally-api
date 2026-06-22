@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { InjectDrizzle } from '@platform';
-import type { DrizzleDB } from '@platform';
+import type { DrizzleDB, DbExecutor } from '@platform';
 import { projectMembers } from '../../../../../../db/schema/work';
 import type {
   ProjectMember,
@@ -47,8 +47,8 @@ export class ProjectMemberDrizzleRepository implements IProjectMemberRepository 
     return rows as ProjectMember[];
   }
 
-  async addMember(input: AddProjectMemberInput): Promise<ProjectMember> {
-    const rows = await this.db
+  async addMember(input: AddProjectMemberInput, tx?: DbExecutor): Promise<ProjectMember> {
+    const rows = await (tx ?? this.db)
       .insert(projectMembers)
       .values({
         id: input.id,

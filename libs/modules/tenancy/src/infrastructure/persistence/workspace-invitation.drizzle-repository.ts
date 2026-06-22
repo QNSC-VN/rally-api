@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, gt } from 'drizzle-orm';
 import { InjectDrizzle } from '@platform';
-import type { DrizzleDB } from '@platform';
+import type { DrizzleDB, DbExecutor } from '@platform';
 import { workspaceInvitations } from '../../../../../../db/schema/tenancy';
 import type {
   WorkspaceInvitation,
@@ -60,8 +60,8 @@ export class WorkspaceInvitationDrizzleRepository implements IWorkspaceInvitatio
     return rows as WorkspaceInvitation[];
   }
 
-  async create(input: CreateInvitationInput): Promise<WorkspaceInvitation> {
-    const rows = await this.db
+  async create(input: CreateInvitationInput, tx?: DbExecutor): Promise<WorkspaceInvitation> {
+    const rows = await (tx ?? this.db)
       .insert(workspaceInvitations)
       .values({
         id: input.id,
@@ -80,8 +80,13 @@ export class WorkspaceInvitationDrizzleRepository implements IWorkspaceInvitatio
     return rows[0] as WorkspaceInvitation;
   }
 
-  async updateStatus(id: string, status: InvitationStatus, acceptedBy?: string): Promise<void> {
-    await this.db
+  async updateStatus(
+    id: string,
+    status: InvitationStatus,
+    acceptedBy?: string,
+    tx?: DbExecutor,
+  ): Promise<void> {
+    await (tx ?? this.db)
       .update(workspaceInvitations)
       .set({
         status,
@@ -91,8 +96,8 @@ export class WorkspaceInvitationDrizzleRepository implements IWorkspaceInvitatio
       .where(eq(workspaceInvitations.id, id));
   }
 
-  async cancelExistingForEmail(workspaceId: string, email: string): Promise<void> {
-    await this.db
+  async cancelExistingForEmail(workspaceId: string, email: string, tx?: DbExecutor): Promise<void> {
+    await (tx ?? this.db)
       .update(workspaceInvitations)
       .set({ status: 'cancelled', updatedAt: new Date() })
       .where(

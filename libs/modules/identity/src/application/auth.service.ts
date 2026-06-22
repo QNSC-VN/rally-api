@@ -8,8 +8,12 @@ import {
   ValkeyService,
   UnauthorizedException,
   NotFoundException,
+  PreconditionFailedException,
   Span,
-  EmailService,
+  EmailSchedulerService,
+  TenantRlsService,
+  addHours,
+  parseDurationToSeconds,
 } from '@platform';
 import type { JwtPayload } from '@platform';
 import { IUserRepository, USER_REPOSITORY } from '../domain/ports/user.repository';
@@ -42,7 +46,8 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly valkey: ValkeyService,
     private readonly config: AppConfigService,
-    private readonly emailService: EmailService,
+    private readonly emailScheduler: EmailSchedulerService,
+    private readonly rls: TenantRlsService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -88,18 +93,21 @@ export class AuthService {
     const refreshExpiry = new Date();
     refreshExpiry.setSeconds(refreshExpiry.getSeconds() + ttlSeconds);
 
-    await Promise.all([
-      this.sessionRepo.create({
-        id: sessionId,
-        tenantId: user.tenantId,
-        userId: user.id,
-        tokenHash,
-        familyId,
-        ipAddress,
-        expiresAt: refreshExpiry,
-      }),
-      this.userRepo.updateLastLogin(user.id),
-    ]);
+    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+      await this.sessionRepo.create(
+        {
+          id: sessionId,
+          tenantId: user.tenantId,
+          userId: user.id,
+          tokenHash,
+          familyId,
+          ipAddress,
+          expiresAt: refreshExpiry,
+        },
+        tx,
+      );
+      await this.userRepo.updateLastLogin(user.id, tx);
+    });
 
     this.logger.log({ userId: user.id, jti, sessionId }, 'User logged in');
 
@@ -146,7 +154,8 @@ export class AuthService {
     }
 
     const user = await this.userRepo.findById(session.userId);
-    if (!user || user.deletedAt) {
+    // AUTH-FR-013: suspended/inactive accounts must not receive new access tokens
+    if (!user || user.deletedAt || user.status === 'suspended' || user.status === 'inactive') {
       throw new UnauthorizedException('USER_DEACTIVATED', 'User not found or deactivated');
     }
 
@@ -158,18 +167,24 @@ export class AuthService {
     const refreshExpiry = new Date();
     refreshExpiry.setSeconds(refreshExpiry.getSeconds() + this.refreshTtlSeconds());
 
-    await Promise.all([
-      this.sessionRepo.revokeById(session.id),
-      this.sessionRepo.create({
-        id: newSessionId,
-        tenantId: user.tenantId,
-        userId: user.id,
-        tokenHash: newHash,
-        familyId: session.familyId, // preserve family for revocation chain
-        ipAddress,
-        expiresAt: refreshExpiry,
-      }),
-    ]);
+    // Atomic token rotation: revoke old session and issue new in one tx.
+    // If either write fails the whole rotation rolls back, so we never end up
+    // with two live refresh tokens (token-reuse / privilege-escalation gap).
+    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+      await this.sessionRepo.revokeById(session.id, tx);
+      await this.sessionRepo.create(
+        {
+          id: newSessionId,
+          tenantId: user.tenantId,
+          userId: user.id,
+          tokenHash: newHash,
+          familyId: session.familyId, // preserve family for revocation chain
+          ipAddress,
+          expiresAt: refreshExpiry,
+        },
+        tx,
+      );
+    });
 
     return { accessToken, refreshToken: newRefreshToken, expiresIn };
   }
@@ -229,7 +244,10 @@ export class AuthService {
 
     const valid = await argon2.verify(user.passwordHash, currentPassword);
     if (!valid) {
-      throw new UnauthorizedException('AUTH_INVALID_CREDENTIALS', 'Current password is incorrect');
+      throw new PreconditionFailedException(
+        'AUTH_INVALID_CREDENTIALS',
+        'Current password is incorrect',
+      );
     }
 
     const newHash = await AuthService.hashPassword(newPassword);
@@ -261,7 +279,9 @@ export class AuthService {
     sessionId: string,
   ): { accessToken: string; jti: string; expiresIn: number } {
     const jti = uuidv7();
-    const expiresIn = 15 * 60; // 15 minutes in seconds
+    // Keep the client-facing expiresIn in lock-step with the JWT signing config
+    // (JWT_ACCESS_EXPIRY) so a config change can never desync the two.
+    const expiresIn = parseDurationToSeconds(this.config.get('JWT_ACCESS_EXPIRY'));
 
     const payload: Omit<JwtPayload, 'iat' | 'exp' | 'iss' | 'aud'> = {
       sub: user.id,
@@ -325,23 +345,75 @@ export class AuthService {
   // ---------------------------------------------------------------------------
 
   @Span('auth.forgotPassword')
-  async forgotPassword(email: string): Promise<void> {
+  async forgotPassword(email: string): Promise<{ devResetUrl?: string }> {
     // Always return success to prevent user enumeration (AUTH-FR-007)
     const user = await this.userRepo.findByEmail(email.toLowerCase().trim());
     if (!user || user.deletedAt || user.status !== 'active') {
-      return; // silent no-op
+      return {}; // silent no-op
     }
 
     const rawToken = randomBytes(32).toString('base64url');
     const tokenHash = this.hashToken(rawToken);
     const ttlHours = this.config.get('PASSWORD_RESET_TOKEN_TTL_HOURS');
-    const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
-
-    await this.userRepo.createPasswordResetToken(user.id, tokenHash, expiresAt);
+    const expiresAt = addHours(ttlHours);
 
     const baseUrl = this.config.get('APP_BASE_URL');
     const resetUrl = `${baseUrl}/reset-password?token=${rawToken}`;
-    await this.emailService.sendPasswordReset(user.email, resetUrl);
+
+    // Atomic: persist the reset token and enqueue the email in the SAME
+    // transaction. Either both commit or neither does — we never end up with a
+    // token the user can't act on, or an email pointing at a non-existent token.
+    // The worker EmailRelayService dispatches it asynchronously, so the HTTP
+    // response returns immediately regardless of SES availability.
+    //
+    // idempotencyKey: derived from tokenHash so a retry of the *same* HTTP
+    // request (network blip) won't schedule a second email for the same token.
+    // A new forgot-password submit generates a new token → new hash → new key,
+    // which is intentional (user requested a fresh token).
+    const emailKey = this.hashToken(`password-reset:${tokenHash}`);
+    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+      await this.userRepo.createPasswordResetToken(user.id, tokenHash, expiresAt, tx);
+      await this.emailScheduler.schedule(
+        {
+          to: user.email,
+          template: 'password-reset',
+          vars: {
+            resetUrl,
+            expiresInHours: String(ttlHours),
+            recipientEmail: user.email,
+          },
+          idempotencyKey: emailKey,
+        },
+        tx,
+      );
+    });
+
+    // In non-production: surface the reset URL so developers can test the flow
+    // without a real email provider (AUTH-FR-007 still holds — email is not leaked)
+    if (this.config.get('NODE_ENV') !== 'production') {
+      return { devResetUrl: resetUrl };
+    }
+    return {};
+  }
+
+  // ---------------------------------------------------------------------------
+  // Verify reset token (read-only — does not consume the token)
+  // Enterprise: lets the reset-password page validate the link before the user
+  // fills in the form, surfacing "expired" / "invalid" states early.
+  // ---------------------------------------------------------------------------
+
+  @Span('auth.verifyResetToken')
+  async verifyResetToken(
+    rawToken: string,
+  ): Promise<{ valid: true } | { valid: false; reason: 'invalid' | 'expired' | 'used' }> {
+    const tokenHash = this.hashToken(rawToken);
+    const record = await this.userRepo.findPasswordResetToken(tokenHash);
+
+    if (!record) return { valid: false, reason: 'invalid' };
+    if (record.usedAt !== null) return { valid: false, reason: 'used' };
+    if (record.expiresAt < new Date()) return { valid: false, reason: 'expired' };
+
+    return { valid: true };
   }
 
   // ---------------------------------------------------------------------------
@@ -371,13 +443,24 @@ export class AuthService {
       throw new UnauthorizedException('PASSWORD_RESET_TOKEN_EXPIRED', 'Reset token has expired');
     }
 
+    const user = await this.userRepo.findById(record.userId);
+    if (!user) {
+      throw new UnauthorizedException(
+        'PASSWORD_RESET_TOKEN_INVALID',
+        'Invalid or unknown reset token',
+      );
+    }
+
     const newHash = await AuthService.hashPassword(newPassword);
 
-    await Promise.all([
-      this.userRepo.updatePasswordHash(record.userId, newHash),
-      this.userRepo.markPasswordResetTokenUsed(record.id),
-      this.sessionRepo.revokeAllForUser(record.userId), // AUTH-FR-009
-    ]);
+    // Atomic: update password, consume the token, and revoke every active
+    // session together. A partial failure here would otherwise leave old
+    // refresh tokens valid after a password reset (session-hijacking gap).
+    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+      await this.userRepo.updatePasswordHash(record.userId, newHash, tx);
+      await this.userRepo.markPasswordResetTokenUsed(record.id, tx);
+      await this.sessionRepo.revokeAllForUser(record.userId, tx); // AUTH-FR-009
+    });
 
     this.logger.log({ userId: record.userId }, 'Password reset successfully');
   }

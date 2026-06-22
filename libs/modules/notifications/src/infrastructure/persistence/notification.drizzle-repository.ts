@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq } from 'drizzle-orm';
 import { InjectDrizzle } from '@platform';
 import type { DrizzleDB } from '@platform';
 import { inAppNotifications } from '../../../../../../db/schema/notifications';
@@ -64,6 +64,20 @@ export class NotificationDrizzleRepository implements INotificationRepository {
       .onConflictDoNothing({ target: inAppNotifications.sourceEventId })
       .returning();
     return (rows[0] as Notification | undefined) ?? null;
+  }
+
+  async countUnread(tenantId: string, recipientId: string): Promise<number> {
+    const rows = await this.db
+      .select({ value: count() })
+      .from(inAppNotifications)
+      .where(
+        and(
+          eq(inAppNotifications.tenantId, tenantId),
+          eq(inAppNotifications.recipientId, recipientId),
+          eq(inAppNotifications.isRead, false),
+        ),
+      );
+    return rows[0]?.value ?? 0;
   }
 
   async markRead(id: string): Promise<void> {

@@ -11,8 +11,10 @@ import { WORKFLOW_STATUS_REPOSITORY } from './domain/ports/workflow-status.repos
 import { LABEL_REPOSITORY } from './domain/ports/label.repository';
 import { PROJECT_TEAM_REPOSITORY } from './domain/ports/project-team.repository';
 import { PROJECT_MEMBER_REPOSITORY } from './domain/ports/project-member.repository';
+import { TenancyModule } from '@modules/tenancy';
 
 @Module({
+  imports: [TenancyModule],
   controllers: [ProjectsController],
   providers: [
     ProjectsService,

@@ -11,7 +11,15 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors, ApiPagedResponse, buildPageArgs, PageQueryDto } from '@platform';
+import {
+  Auth,
+  ApiCommonErrors,
+  ApiPagedResponse,
+  buildPageArgs,
+  PageQueryDto,
+  UseIdempotency,
+  RateLimit,
+} from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { TenancyService } from '../../application/tenancy.service';
@@ -288,6 +296,8 @@ export class WorkspaceController {
   // ── Invite member ──────────────────────────────────────────────────────────
 
   @Post(':id/invitations')
+  @UseIdempotency()
+  @RateLimit('STRICT')
   @ApiOperation({ summary: 'Invite a user to the workspace by email' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 201, type: InvitationResponseDto })
@@ -380,6 +390,7 @@ export class InvitationController {
 
   @Post('accept')
   @HttpCode(204)
+  @RateLimit('STRICT')
   @ApiOperation({ summary: 'Accept a workspace invitation (authenticated user only)' })
   @ApiBearerAuth('access-token')
   @ApiResponse({ status: 204, description: 'Invitation accepted' })

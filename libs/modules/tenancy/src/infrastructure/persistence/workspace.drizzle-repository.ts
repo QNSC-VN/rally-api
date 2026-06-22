@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, isNull, lt } from 'drizzle-orm';
 import { InjectDrizzle, buildPageResult } from '@platform';
-import type { DrizzleDB, CursorPayload, PagedResult } from '@platform';
+import type { DrizzleDB, DbExecutor, CursorPayload, PagedResult } from '@platform';
 import { workspaces } from '../../../../../../db/schema/tenancy';
 import type {
   Workspace,
@@ -54,8 +54,8 @@ export class WorkspaceDrizzleRepository implements IWorkspaceRepository {
     return buildPageResult(rows as Workspace[], limit, (w) => [w.createdAt.toISOString()]);
   }
 
-  async create(input: CreateWorkspaceInput): Promise<Workspace> {
-    const rows = await this.db
+  async create(input: CreateWorkspaceInput, tx?: DbExecutor): Promise<Workspace> {
+    const rows = await (tx ?? this.db)
       .insert(workspaces)
       .values({
         id: input.id,

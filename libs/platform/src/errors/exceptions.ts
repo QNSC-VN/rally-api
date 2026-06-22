@@ -12,12 +12,7 @@ export class DomainException extends Error {
   readonly httpStatus: number;
   readonly details?: unknown[];
 
-  constructor(
-    code: ErrorCode,
-    message: string,
-    category: ErrorCategory,
-    details?: unknown[],
-  ) {
+  constructor(code: ErrorCode, message: string, category: ErrorCategory, details?: unknown[]) {
     super(message);
     this.name = 'DomainException';
     this.code = code;
@@ -40,8 +35,15 @@ export class ConflictException extends DomainException {
 }
 
 export class PermissionDeniedException extends DomainException {
-  constructor(message = 'Permission denied') {
-    super('PERMISSION_DENIED', message, 'PERMISSION_DENIED');
+  constructor(codeOrMessage: ErrorCode | string = 'PERMISSION_DENIED', message?: string) {
+    // Support both: new PermissionDeniedException('PROJECT_PERMISSION_DENIED', 'msg')
+    // and legacy: new PermissionDeniedException('msg')
+    const isCode = message !== undefined;
+    super(
+      isCode ? (codeOrMessage as ErrorCode) : 'PERMISSION_DENIED',
+      isCode ? message! : (codeOrMessage as string),
+      'PERMISSION_DENIED',
+    );
   }
 }
 

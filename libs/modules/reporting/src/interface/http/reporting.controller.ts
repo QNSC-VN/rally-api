@@ -4,6 +4,7 @@ import { Auth, ApiCommonErrors } from '@platform';
 import type { JwtPayload } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { ReportingService } from '../../application/reporting.service';
+import { VELOCITY_DEFAULT_SPRINTS, VELOCITY_MAX_SPRINTS } from '../../domain/reporting.constants';
 import type { SprintBurndownReport, VelocityReport } from '../../domain/reporting.types';
 
 @ApiTags('reporting')
@@ -74,7 +75,9 @@ export class ReportingController {
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Query('lastNSprints') lastNSprints?: string,
   ): Promise<VelocityReport> {
-    const n = lastNSprints ? Math.min(Math.max(parseInt(lastNSprints, 10), 1), 20) : 6;
+    const n = lastNSprints
+      ? Math.min(Math.max(parseInt(lastNSprints, 10), 1), VELOCITY_MAX_SPRINTS)
+      : VELOCITY_DEFAULT_SPRINTS;
     return this.reportingService.getVelocity(user, projectId, n);
   }
 }

@@ -101,4 +101,28 @@ export class AccessService {
     }
     return false;
   }
+
+  /**
+   * Resolve the primary role + effective permissions for a user.
+   * Workspace-scoped assignments take precedence over tenant/project scope.
+   * Falls back to 'workspace_member' defaults when the user has no assignments.
+   */
+  async getUserRoleAndPermissions(
+    userId: string,
+    tenantId: string,
+  ): Promise<{ role: string; permissions: string[] }> {
+    const assignments = await this.assignmentRepo.listForUser(tenantId, userId);
+    if (!assignments.length) {
+      return { role: 'workspace_member', permissions: ['workspace:view', 'project:view'] };
+    }
+
+    // Prefer workspace-scope assignment (most representative of the user's primary role)
+    const preferred = assignments.find((a) => a.scopeType === 'workspace') ?? assignments[0];
+
+    const role = await this.roleRepo.findById(preferred.roleId);
+    return {
+      role: role?.slug ?? 'workspace_member',
+      permissions: role?.permissions ?? ['workspace:view', 'project:view'],
+    };
+  }
 }

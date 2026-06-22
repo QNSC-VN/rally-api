@@ -1,4 +1,4 @@
-import type { CursorPayload, PagedResult } from '@platform';
+import type { CursorPayload, PagedResult, DbExecutor } from '@platform';
 import type { Workspace, CreateWorkspaceInput, UpdateWorkspaceInput } from '../tenancy.types';
 
 export const WORKSPACE_REPOSITORY = Symbol('WORKSPACE_REPOSITORY');
@@ -10,7 +10,7 @@ export interface IWorkspaceRepository {
     tenantId: string,
     args: { limit: number; cursor: CursorPayload | null },
   ): Promise<PagedResult<Workspace>>;
-  create(input: CreateWorkspaceInput): Promise<Workspace>;
+  create(input: CreateWorkspaceInput, tx?: DbExecutor): Promise<Workspace>;
   update(id: string, input: UpdateWorkspaceInput): Promise<Workspace>;
   softDelete(id: string): Promise<void>;
 }

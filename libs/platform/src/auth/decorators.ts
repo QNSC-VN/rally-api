@@ -1,7 +1,14 @@
-import { SetMetadata, applyDecorators, UseGuards } from '@nestjs/common';
+import {
+  SetMetadata,
+  applyDecorators,
+  UseGuards,
+  createParamDecorator,
+  ExecutionContext,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from './jwt.guard';
 import { PermissionGuard } from './permission.guard';
+import type { JwtPayload } from './jwt.strategy';
 
 export const IS_PUBLIC_KEY = 'isPublic';
 export const PERMISSION_KEY = 'requiredPermission';
@@ -10,8 +17,19 @@ export const PERMISSION_KEY = 'requiredPermission';
 export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 
 /** Require a specific permission code (RBAC check via PermissionGuard). */
-export const RequirePermission = (permission: string) =>
-  SetMetadata(PERMISSION_KEY, permission);
+export const RequirePermission = (permission: string) => SetMetadata(PERMISSION_KEY, permission);
+
+/**
+ * Extract the authenticated user's JWT payload from the request.
+ * Only use on routes protected by @Auth() or JwtAuthGuard.
+ *
+ * @example
+ * async getMe(@CurrentUser() user: JwtPayload) { ... }
+ */
+export const CurrentUser = createParamDecorator((_: unknown, ctx: ExecutionContext): JwtPayload => {
+  const request = ctx.switchToHttp().getRequest<{ user: JwtPayload }>();
+  return request.user;
+});
 
 // ── Swagger error-response shortcuts ────────────────────────────────────────
 

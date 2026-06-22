@@ -15,6 +15,13 @@ import { RateLimitGuard } from './rate-limit/rate-limit.guard';
 import { OutboxService } from './outbox/outbox.service';
 import { TenantRlsService } from './database/tenant-rls.service';
 import { EmailService } from './email/email.service';
+import { EmailSchedulerService } from './email/email-scheduler.service';
+import { EMAIL_PROVIDER } from './email/email.provider';
+import { SesEmailProvider } from './email/providers/ses.provider';
+import { DevEmailProvider } from './email/providers/dev.provider';
+import { ResendEmailProvider } from './email/providers/resend.provider';
+import { NotificationSchedulerService } from './notifications/notification-scheduler.service';
+import { NotificationPubSubService } from './notifications/notification-pubsub.service';
 import { HealthController } from './observability/health.controller';
 import { Algorithm } from 'jsonwebtoken';
 import { IdempotencyInterceptor } from './http/idempotency.interceptor';
@@ -63,7 +70,25 @@ import { ResilienceModule } from './resilience/resilience.module';
     { provide: APP_GUARD, useClass: RateLimitGuard },
     OutboxService,
     TenantRlsService,
+    // Email provider — selected via EMAIL_PROVIDER env var ('ses' | 'resend' | 'dev').
+    // All providers share the same IEmailProvider interface; swap without touching business logic.
+    // SES: needs MAIL_FROM_EMAIL + IAM ses:SendEmail role (cheapest at scale).
+    // Resend: needs RESEND_API_KEY + verified domain (best DX, auto-DKIM, recommended for Phase 0).
+    // dev: logs to stdout, no real sending (default).
+    {
+      provide: EMAIL_PROVIDER,
+      inject: [AppConfigService],
+      useFactory: (config: AppConfigService) => {
+        const provider = config.get('EMAIL_PROVIDER');
+        if (provider === 'ses') return new SesEmailProvider(config);
+        if (provider === 'resend') return new ResendEmailProvider(config);
+        return new DevEmailProvider();
+      },
+    },
     EmailService,
+    EmailSchedulerService,
+    NotificationSchedulerService,
+    NotificationPubSubService,
     IdempotencyInterceptor,
     HttpLoggingInterceptor,
   ],
@@ -78,6 +103,9 @@ import { ResilienceModule } from './resilience/resilience.module';
     OutboxService,
     TenantRlsService,
     EmailService,
+    EmailSchedulerService,
+    NotificationSchedulerService,
+    NotificationPubSubService,
     IdempotencyInterceptor,
     HttpLoggingInterceptor,
     ResilienceModule,

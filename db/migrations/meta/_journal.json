@@ -50,6 +50,27 @@
       "when": 1782052333616,
       "tag": "0006_enum_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782200000000,
+      "tag": "0007_email_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782200001000,
+      "tag": "0008_notification_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782200002000,
+      "tag": "0009_work_item_list_index",
+      "breakpoints": true
     }
   ]
 }

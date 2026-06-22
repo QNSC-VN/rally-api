@@ -1,6 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { uuidv7 } from 'uuidv7';
-import { NotFoundException, ConflictException, PreconditionFailedException } from '@platform';
+import {
+  NotFoundException,
+  ConflictException,
+  PreconditionFailedException,
+  PermissionDeniedException,
+  UnitOfWork,
+} from '@platform';
 import type { JwtPayload, CursorPayload, PagedResult } from '@platform';
 import { IProjectRepository, PROJECT_REPOSITORY } from '../domain/ports/project.repository';
 import {
@@ -16,6 +22,7 @@ import {
   IProjectMemberRepository,
   PROJECT_MEMBER_REPOSITORY,
 } from '../domain/ports/project-member.repository';
+import { IWorkspaceMemberRepository, WORKSPACE_MEMBER_REPOSITORY } from '@modules/tenancy';
 import type {
   Project,
   ProjectWithStats,
@@ -41,6 +48,9 @@ export class ProjectsService {
     @Inject(LABEL_REPOSITORY) private readonly labelRepo: ILabelRepository,
     @Inject(PROJECT_TEAM_REPOSITORY) private readonly projectTeamRepo: IProjectTeamRepository,
     @Inject(PROJECT_MEMBER_REPOSITORY) private readonly projectMemberRepo: IProjectMemberRepository,
+    @Inject(WORKSPACE_MEMBER_REPOSITORY)
+    private readonly workspaceMemberRepo: IWorkspaceMemberRepository,
+    private readonly uow: UnitOfWork,
   ) {}
 
   // ── Projects ──────────────────────────────────────────────────────────────
@@ -74,39 +84,62 @@ export class ProjectsService {
     // PRJ-FR-002/006: owner is required; default to the authenticated actor
     const resolvedLeadId = leadId ?? actor.sub;
 
-    const projectId = uuidv7();
-    const project = await this.projectRepo.create({
-      id: projectId,
-      tenantId: actor.tenantId,
-      workspaceId,
-      key: normalizedKey,
-      name,
-      description,
-      leadId: resolvedLeadId,
-    });
+    // PRJ-FR-006: validate that the resolved lead is an active workspace member
+    const lead = await this.workspaceMemberRepo.findMember(workspaceId, resolvedLeadId);
+    if (!lead || lead.status !== 'active') {
+      throw new PreconditionFailedException(
+        'PROJECT_LEAD_NOT_MEMBER',
+        'The project lead must be an active member of this workspace',
+      );
+    }
 
-    // PRJ-FR-003: atomically seed workflow statuses, counter, and owner membership
-    await Promise.all([
-      this.projectRepo.initCounter(projectId, actor.tenantId),
-      this.projectMemberRepo.addMember({
-        id: uuidv7(),
-        tenantId: actor.tenantId,
-        projectId,
-        userId: resolvedLeadId,
-      }),
-      ...DEFAULT_WORKFLOW_STATUSES.map((s) =>
-        this.statusRepo.create({
+    const projectId = uuidv7();
+
+    // PRJ-FR-003: create the project and seed its counter, owner membership and
+    // default workflow statuses in ONE transaction. A partial failure here would
+    // otherwise leave a project with no statuses or no owner — unusable state.
+    const project = await this.uow.run(async (tx) => {
+      const created = await this.projectRepo.create(
+        {
+          id: projectId,
+          tenantId: actor.tenantId,
+          workspaceId,
+          key: normalizedKey,
+          name,
+          description,
+          leadId: resolvedLeadId,
+        },
+        tx,
+      );
+
+      await this.projectRepo.initCounter(projectId, actor.tenantId, tx);
+      await this.projectMemberRepo.addMember(
+        {
           id: uuidv7(),
           tenantId: actor.tenantId,
           projectId,
-          name: s.name,
-          category: s.category,
-          color: s.color,
-          position: s.position,
-          isDefault: s.isDefault,
-        }),
-      ),
-    ]);
+          userId: resolvedLeadId,
+        },
+        tx,
+      );
+      for (const s of DEFAULT_WORKFLOW_STATUSES) {
+        await this.statusRepo.create(
+          {
+            id: uuidv7(),
+            tenantId: actor.tenantId,
+            projectId,
+            name: s.name,
+            category: s.category,
+            color: s.color,
+            position: s.position,
+            isDefault: s.isDefault,
+          },
+          tx,
+        );
+      }
+
+      return created;
+    });
 
     this.logger.log(
       { projectId, key: normalizedKey, leadId: resolvedLeadId, userId: actor.sub },
@@ -124,11 +157,12 @@ export class ProjectsService {
   }
 
   async updateProject(
-    tenantId: string,
+    actor: JwtPayload,
     projectId: string,
     input: UpdateProjectInput,
   ): Promise<Project> {
-    const project = await this.getProject(tenantId, projectId);
+    const project = await this.getProject(actor.tenantId, projectId);
+
     // PRJ-FR-010: archived projects are read-only; only a status restore is allowed
     if (project.status === 'archived' && input.status !== 'active') {
       throw new PreconditionFailedException(
@@ -136,6 +170,31 @@ export class ProjectsService {
         'This project is archived and read-only. Only restoring it to active is permitted.',
       );
     }
+
+    // G-6: archive or restore requires the actor to be a project member
+    const isStatusChange =
+      input.status === 'archived' || (project.status === 'archived' && input.status === 'active');
+    if (isStatusChange) {
+      const membership = await this.projectMemberRepo.findMember(projectId, actor.sub);
+      if (!membership || membership.status !== 'active') {
+        throw new PermissionDeniedException(
+          'PROJECT_PERMISSION_DENIED',
+          'You must be an active project member to archive or restore this project',
+        );
+      }
+    }
+
+    // PRJ-FR-006: if changing leadId, validate new lead is an active workspace member
+    if (input.leadId !== undefined && input.leadId !== null) {
+      const lead = await this.workspaceMemberRepo.findMember(project.workspaceId, input.leadId);
+      if (!lead || lead.status !== 'active') {
+        throw new PreconditionFailedException(
+          'PROJECT_LEAD_NOT_MEMBER',
+          'The project lead must be an active member of this workspace',
+        );
+      }
+    }
+
     return this.projectRepo.update(projectId, input);
   }
 

@@ -43,15 +43,28 @@ export const EnvSchema = z.object({
   AWS_REGION: z.string().default('ap-southeast-1'),
   AWS_ACCOUNT_ID: z.string().optional(),
   SNS_TOPIC_ARN: z.string().optional(),
-  SQS_NOTIFICATIONS_URL: z.string().optional(),
   SQS_AUDIT_URL: z.string().optional(),
   SQS_REPORTING_URL: z.string().optional(),
   SQS_SEARCH_URL: z.string().optional(),
   S3_ATTACHMENTS_BUCKET: z.string().default('rally-attachments'),
 
-  // Email (AWS SES)
-  /** Verified sender address. When not set, EmailService logs instead of sending. */
+  // ── Email ──────────────────────────────────────────────────────────────────
+  /**
+   * Which email transport to use. Defaults to 'dev' (logs to stdout).
+   * 'ses' requires SES_FROM_EMAIL + IAM role with ses:SendEmail.
+   * 'resend' requires RESEND_API_KEY + a verified domain in the Resend dashboard.
+   */
+  EMAIL_PROVIDER: z.enum(['ses', 'resend', 'dev']).default('dev'),
+  /** Display name that appears in the From header, e.g. "Mini Rally". */
+  MAIL_FROM_NAME: z.string().default('Mini Rally'),
+  /** Verified sender address — used by all providers. Required when EMAIL_PROVIDER != 'dev'. */
+  MAIL_FROM_EMAIL: z.string().email().optional(),
+  /** Legacy alias for MAIL_FROM_EMAIL. Supported for backward-compatibility. */
   SES_FROM_EMAIL: z.string().email().optional(),
+  /** Required when EMAIL_PROVIDER=resend. */
+  RESEND_API_KEY: z.string().optional(),
+  /** Reply-To address shown in email clients. Defaults to a no-reply alias. */
+  MAIL_REPLY_TO: z.string().email().optional(),
   /** Public base URL used to build password-reset and invitation links (e.g. https://app.rally.io). */
   APP_BASE_URL: z.string().url().default('http://localhost:5173'),
 

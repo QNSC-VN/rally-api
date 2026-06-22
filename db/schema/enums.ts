@@ -88,6 +88,16 @@ export const releaseStatusEnum = pgEnum('release_status', ['planned', 'released'
 
 export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published', 'failed']);
 
+/** Status for rows in messaging.email_outbox. */
+export const emailJobStatusEnum = pgEnum('email_job_status', ['pending', 'sent', 'failed']);
+
+/** Status for rows in messaging.notification_outbox. */
+export const notificationJobStatusEnum = pgEnum('notification_job_status', [
+  'pending',
+  'sent',
+  'failed',
+]);
+
 // ── TypeScript types (derived — never drift from DB) ──────────────────────
 
 export type UserStatus = (typeof userStatusEnum.enumValues)[number];
@@ -108,3 +118,5 @@ export type WorkflowStatusCategory = (typeof workflowStatusCategoryEnum.enumValu
 export type SprintStatus = (typeof sprintStatusEnum.enumValues)[number];
 export type ReleaseStatus = (typeof releaseStatusEnum.enumValues)[number];
 export type OutboxStatus = (typeof outboxStatusEnum.enumValues)[number];
+export type EmailJobStatus = (typeof emailJobStatusEnum.enumValues)[number];
+export type NotificationJobStatus = (typeof notificationJobStatusEnum.enumValues)[number];

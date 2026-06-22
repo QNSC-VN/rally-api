@@ -23,6 +23,7 @@ import * as schema from '../schema';
 // projectMembers must be imported directly — the barrel export has a tsx/CJS
 // module-resolution edge case that causes it to be undefined at runtime.
 import { projectMembers } from '../schema/work';
+import { userRoleAssignments } from '../schema/access';
 import { DEFAULT_WORKFLOW_STATUSES } from '../../libs/modules/projects/src/domain/project.constants';
 
 const url = process.env['DATABASE_URL'];
@@ -211,8 +212,38 @@ async function seed() {
 
   // ── System roles ─────────────────────────────────────────────────────────
   const ROLES = [
-    { slug: 'workspace_admin', name: 'Workspace Admin', permissions: ['workspace:*'] },
-    { slug: 'project_admin', name: 'Project Admin', permissions: ['project:*'] },
+    {
+      slug: 'workspace_admin',
+      name: 'Workspace Admin',
+      permissions: [
+        'workspace:*',
+        'project:view',
+        'project:create',
+        'project:edit',
+        'project:archive',
+        'project:restore',
+        'project:delete',
+        'work_item:create',
+        'work_item:edit',
+        'work_item:delete',
+        'work_item:view',
+      ],
+    },
+    {
+      slug: 'project_admin',
+      name: 'Project Admin',
+      permissions: [
+        'project:view',
+        'project:create',
+        'project:edit',
+        'project:archive',
+        'project:restore',
+        'work_item:create',
+        'work_item:edit',
+        'work_item:delete',
+        'work_item:view',
+      ],
+    },
     {
       slug: 'project_member',
       name: 'Project Member',
@@ -235,6 +266,30 @@ async function seed() {
         slug: role.slug,
         isSystem: true,
         permissions: role.permissions,
+      })
+      .onConflictDoUpdate({
+        target: schema.systemRoles.slug,
+        set: { permissions: role.permissions, name: role.name },
+      });
+  }
+
+  // ── Admin user role assignment (workspace_admin for the default workspace) ──
+  const adminRoleRow = await db
+    .select({ id: schema.systemRoles.id })
+    .from(schema.systemRoles)
+    .where(eq(schema.systemRoles.slug, 'workspace_admin'))
+    .limit(1);
+
+  if (adminRoleRow[0]) {
+    await db
+      .insert(userRoleAssignments)
+      .values({
+        tenantId: SYSTEM_TENANT_ID,
+        userId: ADMIN_USER_ID,
+        roleId: adminRoleRow[0].id,
+        scopeType: 'workspace',
+        scopeId: WORKSPACE_ID,
+        grantedBy: ADMIN_USER_ID,
       })
       .onConflictDoNothing();
   }

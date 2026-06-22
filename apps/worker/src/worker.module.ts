@@ -9,9 +9,10 @@ import { NotificationsModule } from '@modules/notifications';
 import { ReportingModule } from '@modules/reporting';
 import { OutboxRelayService } from './outbox/outbox-relay.service';
 import { AuditConsumer } from './consumers/audit.consumer';
-import { NotificationsConsumer } from './consumers/notifications.consumer';
 import { SnapshotCronService } from './cron/snapshot.cron';
 import { CleanupCronService } from './cron/cleanup.cron';
+import { EmailRelayService } from './email/email-relay.service';
+import { NotificationRelayService } from './notifications/notification-relay.service';
 
 /**
  * Worker process module.
@@ -55,9 +56,12 @@ import { CleanupCronService } from './cron/cleanup.cron';
   providers: [
     // Transactional outbox → SNS relay
     OutboxRelayService,
+    // Email outbox relay → IEmailProvider
+    EmailRelayService,
+    // Notification outbox relay → in_app_notifications
+    NotificationRelayService,
     // SQS long-poll consumers
     AuditConsumer,
-    NotificationsConsumer,
     // Scheduled cron jobs
     SnapshotCronService,
     CleanupCronService,

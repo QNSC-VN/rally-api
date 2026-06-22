@@ -9,6 +9,15 @@ export const DRIZZLE = Symbol('DRIZZLE');
 export type DrizzleDB = ReturnType<typeof drizzle<typeof schema>>;
 export type DrizzleTx = Parameters<Parameters<DrizzleDB['transaction']>[0]>[0];
 
+/**
+ * A database executor — either the root connection or an open transaction.
+ *
+ * Repository methods accept an optional `DbExecutor` so they can enlist in a
+ * caller-owned transaction (Unit of Work).  When omitted they fall back to the
+ * injected root `DrizzleDB`, preserving the simple single-statement path.
+ */
+export type DbExecutor = DrizzleDB | DrizzleTx;
+
 export const InjectDrizzle = () => Inject(DRIZZLE);
 
 @Injectable()

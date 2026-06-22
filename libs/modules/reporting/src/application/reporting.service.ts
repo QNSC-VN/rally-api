@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { JwtPayload } from '@platform';
 import { IReportingRepository, REPORTING_REPOSITORY } from '../domain/ports/reporting.repository';
+import { VELOCITY_DEFAULT_SPRINTS } from '../domain/reporting.constants';
 import type {
   SprintBurndownReport,
   SprintSnapshot,
@@ -29,7 +30,7 @@ export class ReportingService {
   async getVelocity(
     actor: JwtPayload,
     projectId: string,
-    lastNSprints = 6,
+    lastNSprints = VELOCITY_DEFAULT_SPRINTS,
   ): Promise<VelocityReport> {
     const sprints = await this.reportingRepo.getVelocity(actor.tenantId, projectId, lastNSprints);
     return { projectId, sprints };

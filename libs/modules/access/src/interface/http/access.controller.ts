@@ -11,7 +11,7 @@ import {
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Auth, ApiCommonErrors } from '@platform';
 import type { JwtPayload } from '@platform';
-import { CurrentUser } from '@modules/identity';
+import { CurrentUser } from '@platform';
 import { AccessService } from '../../application/access.service';
 import { AssignRoleDto } from './dto/access-request.dto';
 import { RoleResponseDto, RoleAssignmentResponseDto } from './dto/access-response.dto';

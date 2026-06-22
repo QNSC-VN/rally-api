@@ -19,6 +19,8 @@ export const AuthTokenResponseSchema = z.object({
 export class AuthTokenResponseDto extends createZodDto(AuthTokenResponseSchema) {}
 
 export const UserProfileResponseSchema = UserProfileSchema.extend({
+  role: z.string(),
+  permissions: z.array(z.string()),
   emailVerified: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),

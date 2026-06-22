@@ -107,6 +107,11 @@ export const workItems = workSchema.table(
     itemKeyIdx: uniqueIndex('uq_wi_item_key').on(t.projectId, t.itemKey),
     boardIdx: index('ix_wi_board').on(t.tenantId, t.projectId, t.statusId, t.rank),
     backlogIdx: index('ix_wi_backlog').on(t.tenantId, t.projectId, t.rank),
+    // Default list/pagination path: filter (tenantId, projectId), order by createdAt,
+    // excluding soft-deleted rows. Partial index keeps it lean and sort-free.
+    listIdx: index('ix_wi_list')
+      .on(t.tenantId, t.projectId, t.createdAt)
+      .where(sql`deleted_at IS NULL`),
     assigneeIdx: index('ix_wi_assignee').on(t.tenantId, t.assigneeId),
     parentIdx: index('ix_wi_parent').on(t.parentId),
     iterationIdx: index('ix_wi_iteration').on(t.iterationId),

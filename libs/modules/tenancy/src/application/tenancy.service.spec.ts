@@ -20,7 +20,14 @@ import type {
   WorkspaceMember,
   WorkspaceInvitation,
 } from '../domain/tenancy.types';
-import { NotFoundException, ConflictException, AppConfigService, EmailService } from '@platform';
+import {
+  NotFoundException,
+  ConflictException,
+  AppConfigService,
+  EmailSchedulerService,
+  UnitOfWork,
+  TenantRlsService,
+} from '@platform';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -137,9 +144,18 @@ const makeConfig = () => ({
   }),
 });
 
-const makeEmailService = () => ({
-  sendPasswordReset: vi.fn().mockResolvedValue(undefined),
-  sendWorkspaceInvitation: vi.fn().mockResolvedValue(undefined),
+const makeEmailScheduler = () => ({
+  schedule: vi.fn().mockResolvedValue(undefined),
+});
+
+// Run the wrapped work immediately with a stub transaction so repository mocks
+// receive a tx argument exactly as they would in production.
+const makeUow = () => ({
+  run: vi.fn((fn: (tx: unknown) => unknown) => fn({})),
+});
+
+const makeRls = () => ({
+  withTenantContext: vi.fn((_tenantId: string, fn: (tx: unknown) => unknown) => fn({})),
 });
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -151,7 +167,9 @@ describe('TenancyService', () => {
   let memberRepo: ReturnType<typeof makeMemberRepo>;
   let invitationRepo: ReturnType<typeof makeInvitationRepo>;
   let settingsRepo: ReturnType<typeof makeSettingsRepo>;
-  let emailService: ReturnType<typeof makeEmailService>;
+  let emailScheduler: ReturnType<typeof makeEmailScheduler>;
+  let uow: ReturnType<typeof makeUow>;
+  let rls: ReturnType<typeof makeRls>;
 
   beforeEach(async () => {
     tenantRepo = makeTenantRepo();
@@ -159,7 +177,9 @@ describe('TenancyService', () => {
     memberRepo = makeMemberRepo();
     invitationRepo = makeInvitationRepo();
     settingsRepo = makeSettingsRepo();
-    emailService = makeEmailService();
+    emailScheduler = makeEmailScheduler();
+    uow = makeUow();
+    rls = makeRls();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -170,7 +190,9 @@ describe('TenancyService', () => {
         { provide: WORKSPACE_INVITATION_REPOSITORY, useValue: invitationRepo },
         { provide: WORKSPACE_SETTINGS_REPOSITORY, useValue: settingsRepo },
         { provide: AppConfigService, useValue: makeConfig() },
-        { provide: EmailService, useValue: emailService },
+        { provide: EmailSchedulerService, useValue: emailScheduler },
+        { provide: UnitOfWork, useValue: uow },
+        { provide: TenantRlsService, useValue: rls },
       ],
     }).compile();
 
@@ -338,13 +360,22 @@ describe('TenancyService', () => {
       );
 
       expect(result.email).toBe('bob@example.com');
-      expect(invitationRepo.cancelExistingForEmail).toHaveBeenCalledWith('ws-1', 'bob@example.com');
-      expect(invitationRepo.create).toHaveBeenCalledOnce();
-      expect(emailService.sendWorkspaceInvitation).toHaveBeenCalledWith(
+      expect(invitationRepo.cancelExistingForEmail).toHaveBeenCalledWith(
+        'ws-1',
         'bob@example.com',
-        'Main',
-        expect.stringContaining('/accept-invitation?token='),
-        7,
+        expect.anything(),
+      );
+      expect(invitationRepo.create).toHaveBeenCalledOnce();
+      expect(emailScheduler.schedule).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: 'bob@example.com',
+          template: 'workspace-invitation',
+          vars: expect.objectContaining({
+            workspaceName: 'Main',
+            inviteUrl: expect.stringContaining('/accept-invitation?token='),
+          }),
+        }),
+        expect.anything(),
       );
     });
 
@@ -354,7 +385,11 @@ describe('TenancyService', () => {
 
       await service.inviteMember('tenant-1', 'ws-1', 'BOB@Example.com', undefined, 'actor-1');
 
-      expect(invitationRepo.cancelExistingForEmail).toHaveBeenCalledWith('ws-1', 'bob@example.com');
+      expect(invitationRepo.cancelExistingForEmail).toHaveBeenCalledWith(
+        'ws-1',
+        'bob@example.com',
+        expect.anything(),
+      );
     });
   });
 
@@ -391,7 +426,12 @@ describe('TenancyService', () => {
 
       await service.acceptInvitation('raw-token', 'user-2');
 
-      expect(invitationRepo.updateStatus).toHaveBeenCalledWith('inv-1', 'accepted', 'user-2');
+      expect(invitationRepo.updateStatus).toHaveBeenCalledWith(
+        'inv-1',
+        'accepted',
+        'user-2',
+        expect.anything(),
+      );
       expect(memberRepo.addMember).toHaveBeenCalledOnce();
     });
 

@@ -1,8 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { InjectDrizzle, buildPageResult } from '@platform';
-import type { DrizzleDB, CursorPayload, PagedResult } from '@platform';
-import { projects, projectCounters, projectMembers } from '../../../../../../db/schema/work';
+import type { DrizzleDB, DbExecutor, CursorPayload, PagedResult } from '@platform';
+import {
+  projects,
+  projectCounters,
+  projectMembers,
+  projectTeams,
+} from '../../../../../../db/schema/work';
 import { users } from '../../../../../../db/schema/identity';
 import type {
   Project,
@@ -101,6 +106,21 @@ export class ProjectDrizzleRepository implements IProjectRepository {
       countMap[row.projectId] = row.count;
     }
 
+    // Count linked active teams per project (no N+1: single query)
+    const teamCountRows = await this.db
+      .select({
+        projectId: projectTeams.projectId,
+        count: sql<number>`COUNT(*)::int`,
+      })
+      .from(projectTeams)
+      .where(and(inArray(projectTeams.projectId, projectIds), eq(projectTeams.status, 'active')))
+      .groupBy(projectTeams.projectId);
+
+    const teamCountMap: Record<string, number> = {};
+    for (const row of teamCountRows) {
+      teamCountMap[row.projectId] = row.count;
+    }
+
     // Resolve lead display names (no N+1: single query)
     const leadIds = [
       ...new Set(page.data.map((p) => p.leadId).filter((id): id is string => id != null)),
@@ -121,13 +141,14 @@ export class ProjectDrizzleRepository implements IProjectRepository {
       data: page.data.map((p) => ({
         ...p,
         memberCount: countMap[p.id] ?? 0,
+        teamCount: teamCountMap[p.id] ?? 0,
         leadName: p.leadId != null ? (leadNameMap[p.leadId] ?? null) : null,
       })),
     };
   }
 
-  async create(input: CreateProjectInput): Promise<Project> {
-    const rows = await this.db
+  async create(input: CreateProjectInput, tx?: DbExecutor): Promise<Project> {
+    const rows = await (tx ?? this.db)
       .insert(projects)
       .values({
         id: input.id,
@@ -165,8 +186,8 @@ export class ProjectDrizzleRepository implements IProjectRepository {
       .where(eq(projects.id, id));
   }
 
-  async initCounter(projectId: string, tenantId: string): Promise<void> {
-    await this.db
+  async initCounter(projectId: string, tenantId: string, tx?: DbExecutor): Promise<void> {
+    await (tx ?? this.db)
       .insert(projectCounters)
       .values({ projectId, tenantId, lastItemNumber: 0 })
       .onConflictDoNothing();

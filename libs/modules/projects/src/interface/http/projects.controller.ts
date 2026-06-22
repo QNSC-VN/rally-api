@@ -35,7 +35,7 @@ import type { Label } from '../../domain/label.types';
 // ── Mappers ──────────────────────────────────────────────────────────────────
 
 function toProjectDto(
-  p: Project & { memberCount?: number; leadName?: string | null },
+  p: Project & { memberCount?: number; teamCount?: number; leadName?: string | null },
 ): ProjectResponseDto {
   return {
     id: p.id,
@@ -48,6 +48,7 @@ function toProjectDto(
     leadName: p.leadName ?? null,
     status: p.status,
     memberCount: p.memberCount ?? 0,
+    teamCount: p.teamCount ?? 0,
     settings: p.settings,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
@@ -159,7 +160,7 @@ export class ProjectsController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProjectDto,
   ): Promise<ProjectResponseDto> {
-    const project = await this.projectsService.updateProject(user.tenantId, id, dto);
+    const project = await this.projectsService.updateProject(user, id, dto);
     return toProjectDto(project);
   }
 

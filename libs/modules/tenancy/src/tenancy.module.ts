@@ -35,6 +35,6 @@ import { TEAM_MEMBER_REPOSITORY } from './domain/ports/team-member.repository';
     { provide: TEAM_REPOSITORY, useClass: TeamDrizzleRepository },
     { provide: TEAM_MEMBER_REPOSITORY, useClass: TeamMemberDrizzleRepository },
   ],
-  exports: [TenancyService, TeamService],
+  exports: [TenancyService, TeamService, WORKSPACE_MEMBER_REPOSITORY],
 })
 export class TenancyModule {}
