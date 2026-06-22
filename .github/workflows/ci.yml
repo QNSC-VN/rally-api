@@ -31,17 +31,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - uses: actions/setup-node@v4
+      - uses: nghiavan0610/rally-gitops/actions/setup-node-pnpm@main
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       - name: Lint
         run: pnpm lint
@@ -82,17 +75,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - uses: actions/setup-node@v4
+      - uses: nghiavan0610/rally-gitops/actions/setup-node-pnpm@main
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       # Generate a fresh ephemeral Ed25519 keypair for tests.
       # No stored secret needed — keys are test-only, discarded after the run.
@@ -224,17 +210,10 @@ jobs:
           # Fetch full history so we can compare against the base branch
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - uses: actions/setup-node@v4
+      - uses: nghiavan0610/rally-gitops/actions/setup-node-pnpm@main
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       - name: Generate ephemeral JWT keys
         run: |
@@ -420,17 +399,10 @@ jobs:
           # Extend with security-and-quality suite for broader coverage
           queries: security-and-quality
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - uses: actions/setup-node@v4
+      - uses: nghiavan0610/rally-gitops/actions/setup-node-pnpm@main
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       - name: Build for CodeQL
         run: pnpm build:api
