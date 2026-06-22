@@ -1,0 +1,173 @@
+# =============================================================================
+# Rollback — revert ECS services to a known-good image tag
+#
+# Use during incidents when the latest deploy introduced a regression.
+# Requires the target image tag to already exist in ECR.
+#
+# What it does:
+#   1. Fetches the current ECS task definitions for api + worker
+#   2. Replaces the image tag with the rollback target
+#   3. Registers new task definition revisions
+#   4. Updates both ECS services simultaneously
+#   5. Polls until both services are stable
+#
+# Authentication: OIDC → same deploy IAM role as deploy.yml
+#                 (no stored AWS credentials)
+# =============================================================================
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to roll back
+        required: true
+        type: choice
+        options:
+          - develop
+          - production
+      image_tag:
+        description: >
+          Image tag to roll back to — e.g. sha-abc1234 or v1.2.3.
+          Find previous tags in ECR or the deploy workflow run history.
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false   # never cancel an in-flight deploy/rollback
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+jobs:
+  rollback:
+    name: Rollback ${{ inputs.environment }} → ${{ inputs.image_tag }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write   # OIDC
+      contents: read
+
+    env:
+      IMAGE_TAG:   ${{ inputs.image_tag }}
+      ENVIRONMENT: ${{ inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/rally-github-deploy-${{ inputs.environment }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify image tag exists in ECR
+        run: |
+          for REPO in rally-api rally-worker; do
+            echo "Checking $REPO:$IMAGE_TAG in ECR..."
+            aws ecr describe-images \
+              --repository-name "$REPO" \
+              --image-ids imageTag="$IMAGE_TAG" \
+              --region "$AWS_REGION" \
+              --query 'imageDetails[0].imageTags' \
+              --output text \
+            || (echo "✗ Image $REPO:$IMAGE_TAG not found in ECR. Aborting." && exit 1)
+            echo "  ✓ Found"
+          done
+
+      - name: Update api task definition to rollback tag
+        id: api-taskdef
+        run: |
+          TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition "${{ vars.ECS_API_SERVICE }}" \
+            --query 'taskDefinition' --output json)
+
+          NEW_TASK_DEF=$(echo "$TASK_DEF" | python3 -c "
+          import sys, json
+          td = json.load(sys.stdin)
+          for c in td['containerDefinitions']:
+              repo = c['image'].rsplit(':', 1)[0]
+              c['image'] = f\"{repo}:$IMAGE_TAG\"
+          for f in ['taskDefinitionArn','revision','status','requiresAttributes',
+                    'placementConstraints','compatibilities','registeredAt','registeredBy']:
+              td.pop(f, None)
+          print(json.dumps(td))
+          ")
+
+          ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+          echo "Registered api task def: $ARN"
+
+      - name: Update worker task definition to rollback tag
+        id: worker-taskdef
+        run: |
+          TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition "${{ vars.ECS_WORKER_SERVICE }}" \
+            --query 'taskDefinition' --output json)
+
+          NEW_TASK_DEF=$(echo "$TASK_DEF" | python3 -c "
+          import sys, json
+          td = json.load(sys.stdin)
+          for c in td['containerDefinitions']:
+              repo = c['image'].rsplit(':', 1)[0]
+              c['image'] = f\"{repo}:$IMAGE_TAG\"
+          for f in ['taskDefinitionArn','revision','status','requiresAttributes',
+                    'placementConstraints','compatibilities','registeredAt','registeredBy']:
+              td.pop(f, None)
+          print(json.dumps(td))
+          ")
+
+          ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "arn=$ARN" >> "$GITHUB_OUTPUT"
+          echo "Registered worker task def: $ARN"
+
+      - name: Roll back ECS services
+        run: |
+          aws ecs update-service \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --service "${{ vars.ECS_API_SERVICE }}" \
+            --task-definition "${{ steps.api-taskdef.outputs.arn }}" \
+            --force-new-deployment \
+            --region "$AWS_REGION" \
+            --query 'service.serviceName' --output text
+
+          aws ecs update-service \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --service "${{ vars.ECS_WORKER_SERVICE }}" \
+            --task-definition "${{ steps.worker-taskdef.outputs.arn }}" \
+            --force-new-deployment \
+            --region "$AWS_REGION" \
+            --query 'service.serviceName' --output text
+
+      - name: Wait for api service to stabilize
+        uses: nghiavan0610/rally-gitops/actions/verify-ecs-deploy@main
+        with:
+          cluster: ${{ vars.ECS_CLUSTER }}
+          service: ${{ vars.ECS_API_SERVICE }}
+          image-tag: ${{ inputs.image_tag }}
+          region: ${{ env.AWS_REGION }}
+          timeout-seconds: '600'
+
+      - name: Wait for worker service to stabilize
+        uses: nghiavan0610/rally-gitops/actions/verify-ecs-deploy@main
+        with:
+          cluster: ${{ vars.ECS_CLUSTER }}
+          service: ${{ vars.ECS_WORKER_SERVICE }}
+          image-tag: ${{ inputs.image_tag }}
+          region: ${{ env.AWS_REGION }}
+          timeout-seconds: '600'
+
+      - name: Rollback summary
+        run: |
+          echo "### Rollback complete ✅" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Environment:** ${{ inputs.environment }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Rolled back to:** \`${{ inputs.image_tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Triggered by:** @${{ github.actor }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "> ⚠️ Remember to create a hotfix or revert the breaking commit on \`main\`." >> "$GITHUB_STEP_SUMMARY"

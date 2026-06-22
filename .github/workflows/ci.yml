@@ -1,7 +1,7 @@
 # =============================================================================
-# CI — runs on every PR and every push to main
+# CI — fast quality gates on every PR and push to main
 # Gate: lint → typecheck → unit tests → e2e tests → docker build → openapi diff
-# All jobs run in parallel where possible; build only runs after tests pass.
+# Security scans (Trivy, CodeQL) live in security.yml — independently runnable.
 # =============================================================================
 name: CI
 
@@ -18,8 +18,6 @@ concurrency:
 env:
   NODE_VERSION: '22'
   PNPM_VERSION: '10.33.2'
-  # Docker image name (no registry — not pushed in CI, only built for validation)
-  IMAGE_NAME: rally-api
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────
@@ -331,83 +329,4 @@ jobs:
           subjectPatternError: |
             The subject "{subject}" must start with a lowercase letter.
 
-  # ─────────────────────────────────────────────────────────────────────────
-  # 6. Trivy — scan the built Docker image for OS + library CVEs.
-  #    Blocks on CRITICAL severity. HIGH is reported but non-blocking until
-  #    a fix is available (to avoid blocking on upstream supply chain issues).
-  # ─────────────────────────────────────────────────────────────────────────
-  trivy:
-    name: Container security scan (Trivy)
-    runs-on: ubuntu-latest
-    needs: [build]
-    permissions:
-      security-events: write   # upload SARIF to GitHub Security tab
-      contents: read
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Build API image for scanning
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          target: api
-          push: false
-          load: true
-          tags: rally-api:scan
-          cache-from: type=gha,scope=api
-
-      - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: rally-api:scan
-          format: sarif
-          output: trivy-results.sarif
-          severity: CRITICAL,HIGH
-          exit-code: '1'          # fail CI on CRITICAL
-          ignore-unfixed: true    # skip CVEs with no fix available
-
-      - name: Upload Trivy SARIF to GitHub Security
-        if: always()             # upload even if scan failed
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trivy-results.sarif
-          category: trivy-container
-
-  # ─────────────────────────────────────────────────────────────────────────
-  # 7. CodeQL — static application security testing (SAST).
-  #    Scans TypeScript source for injection, path traversal, prototype
-  #    pollution, and other OWASP Top 10 patterns.
-  # ─────────────────────────────────────────────────────────────────────────
-  codeql:
-    name: CodeQL SAST
-    runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Initialise CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: javascript-typescript
-          # Extend with security-and-quality suite for broader coverage
-          queries: security-and-quality
-
-      - uses: nghiavan0610/rally-gitops/actions/setup-node-pnpm@main
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          pnpm-version: ${{ env.PNPM_VERSION }}
-
-      - name: Build for CodeQL
-        run: pnpm build:api
-
-      - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
-        with:
-          category: codeql-typescript
+  # Security scans (Trivy, CodeQL) → security.yml
