@@ -8,22 +8,29 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import type { IEmailProvider, EmailPayload } from '../email.provider';
+import { AppConfigService } from '../../config';
 
 @Injectable()
 export class DevEmailProvider implements IEmailProvider {
   private readonly logger = new Logger(DevEmailProvider.name);
 
+  constructor(private readonly config: AppConfigService) {}
+
   async send(payload: EmailPayload): Promise<void> {
-    this.logger.warn(
-      {
-        to: payload.to,
-        from: payload.from,
-        subject: payload.subject,
-        category: payload.category ?? 'transactional',
-        idempotencyKey: payload.idempotencyKey,
-        // Log text body only — HTML can be large; inspect full payload in debug mode.
-        text: payload.text,
-      },
+    const fields: Record<string, unknown> = {
+      to: payload.to,
+      from: payload.from,
+      subject: payload.subject,
+      category: payload.category ?? 'transactional',
+      idempotencyKey: payload.idempotencyKey,
+    };
+
+    if (this.config.get('LOG_DEV_EMAIL_CONTENT')) {
+      fields['text'] = payload.text;
+    }
+
+    this.logger.debug(
+      fields,
       '[DEV EMAIL] Would send email — set EMAIL_PROVIDER=ses|resend to use a real transport',
     );
   }

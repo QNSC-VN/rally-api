@@ -1,13 +1,8 @@
-import {
-  CallHandler,
-  ExecutionContext,
-  Injectable,
-  Logger,
-  NestInterceptor,
-} from '@nestjs/common';
+import { CallHandler, ExecutionContext, Injectable, Logger, NestInterceptor } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
+import { AppConfigService } from '../config/app-config.service';
 
 /** Routes whose access logs are suppressed (probes + favicon spam). */
 const SKIP_LOG_PREFIXES = new Set(['/v1/healthz', '/v1/readyz', '/favicon.ico']);
@@ -25,6 +20,37 @@ const REDACTED_BODY_FIELDS = new Set([
   'creditCard',
 ]);
 
+const MAX_COLLECTION_ITEMS = 20;
+const MAX_STRING_LENGTH = 256;
+
+function isSensitiveKey(key: string): boolean {
+  return (
+    REDACTED_BODY_FIELDS.has(key) || /(token|secret|password|cookie|authorization|key)$/i.test(key)
+  );
+}
+
+function sanitizeValue(value: unknown, key?: string): unknown {
+  if (key && isSensitiveKey(key)) return '[REDACTED]';
+
+  if (Array.isArray(value)) {
+    return value.slice(0, MAX_COLLECTION_ITEMS).map((item) => sanitizeValue(item));
+  }
+
+  if (value && typeof value === 'object') {
+    const sanitized: Record<string, unknown> = {};
+    for (const [childKey, childValue] of Object.entries(value)) {
+      sanitized[childKey] = sanitizeValue(childValue, childKey);
+    }
+    return sanitized;
+  }
+
+  if (typeof value === 'string' && value.length > MAX_STRING_LENGTH) {
+    return `${value.slice(0, MAX_STRING_LENGTH)}...[truncated]`;
+  }
+
+  return value;
+}
+
 /**
  * HttpLoggingInterceptor
  *
@@ -38,6 +64,7 @@ const REDACTED_BODY_FIELDS = new Set([
 @Injectable()
 export class HttpLoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger('HTTP');
+  constructor(private readonly config: AppConfigService) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() !== 'http') {
@@ -46,7 +73,8 @@ export class HttpLoggingInterceptor implements NestInterceptor {
 
     const req = context.switchToHttp().getRequest<FastifyRequest & { user?: { id?: string } }>();
     const method = req.method;
-    const url = (req as unknown as Record<string, unknown>)['originalUrl'] as string | undefined ?? req.url;
+    const url =
+      ((req as unknown as Record<string, unknown>)['originalUrl'] as string | undefined) ?? req.url;
 
     if (SKIP_LOG_PREFIXES.has(url)) {
       return next.handle();
@@ -63,7 +91,9 @@ export class HttpLoggingInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap({
         next: () => {
-          const statusCode = context.switchToHttp().getResponse<{ statusCode: number }>().statusCode;
+          const statusCode = context
+            .switchToHttp()
+            .getResponse<{ statusCode: number }>().statusCode;
           const duration = Date.now() - startTime;
           const userId = req.user?.id;
 
@@ -77,7 +107,6 @@ export class HttpLoggingInterceptor implements NestInterceptor {
             correlationId,
             ip,
             query: this.extractQuery(req),
-            body: this.extractBody(req),
           });
         },
         error: (err: unknown) => {
@@ -118,18 +147,14 @@ export class HttpLoggingInterceptor implements NestInterceptor {
   private extractQuery(req: FastifyRequest): Record<string, unknown> | undefined {
     const q = req.query as Record<string, unknown> | undefined;
     if (!q || Object.keys(q).length === 0) return undefined;
-    return q;
+    return sanitizeValue(q) as Record<string, unknown>;
   }
 
   private extractBody(req: FastifyRequest): Record<string, unknown> | undefined {
+    if (!this.config.get('LOG_HTTP_BODIES')) return undefined;
     if (!['POST', 'PUT', 'PATCH'].includes(req.method)) return undefined;
     const body = req.body as Record<string, unknown> | undefined;
     if (!body || typeof body !== 'object') return undefined;
-
-    const sanitized: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(body)) {
-      sanitized[k] = REDACTED_BODY_FIELDS.has(k) ? '[REDACTED]' : v;
-    }
-    return sanitized;
+    return sanitizeValue(body) as Record<string, unknown>;
   }
 }

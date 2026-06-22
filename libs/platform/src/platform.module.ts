@@ -82,7 +82,7 @@ import { ResilienceModule } from './resilience/resilience.module';
         const provider = config.get('EMAIL_PROVIDER');
         if (provider === 'ses') return new SesEmailProvider(config);
         if (provider === 'resend') return new ResendEmailProvider(config);
-        return new DevEmailProvider();
+        return new DevEmailProvider(config);
       },
     },
     EmailService,

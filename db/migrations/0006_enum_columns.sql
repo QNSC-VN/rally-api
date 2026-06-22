@@ -16,6 +16,8 @@ CREATE TYPE "public"."work_item_priority" AS ENUM('critical', 'high', 'medium', 
 CREATE TYPE "public"."work_item_type" AS ENUM('initiative', 'feature', 'story', 'task', 'defect');--> statement-breakpoint
 CREATE TYPE "public"."workflow_status_category" AS ENUM('to_do', 'in_progress', 'done');--> statement-breakpoint
 CREATE TYPE "public"."workspace_member_status" AS ENUM('active', 'suspended', 'removed');--> statement-breakpoint
+DROP INDEX IF EXISTS "work"."ix_sprints_active";--> statement-breakpoint
+DROP INDEX IF EXISTS "messaging"."ix_outbox_status";--> statement-breakpoint
 ALTER TABLE "tenancy"."subscriptions" ALTER COLUMN "plan" SET DEFAULT 'free'::"public"."subscription_plan";--> statement-breakpoint
 ALTER TABLE "tenancy"."subscriptions" ALTER COLUMN "plan" SET DATA TYPE "public"."subscription_plan" USING "plan"::"public"."subscription_plan";--> statement-breakpoint
 ALTER TABLE "tenancy"."subscriptions" ALTER COLUMN "status" SET DEFAULT 'active'::"public"."subscription_status";--> statement-breakpoint
@@ -50,4 +52,6 @@ ALTER TABLE "work"."work_items" ALTER COLUMN "priority" SET DEFAULT 'medium'::"p
 ALTER TABLE "work"."work_items" ALTER COLUMN "priority" SET DATA TYPE "public"."work_item_priority" USING "priority"::"public"."work_item_priority";--> statement-breakpoint
 ALTER TABLE "work"."workflow_statuses" ALTER COLUMN "category" SET DATA TYPE "public"."workflow_status_category" USING "category"::"public"."workflow_status_category";--> statement-breakpoint
 ALTER TABLE "messaging"."outbox_events" ALTER COLUMN "status" SET DEFAULT 'pending'::"public"."outbox_status";--> statement-breakpoint
-ALTER TABLE "messaging"."outbox_events" ALTER COLUMN "status" SET DATA TYPE "public"."outbox_status" USING "status"::"public"."outbox_status";
+ALTER TABLE "messaging"."outbox_events" ALTER COLUMN "status" SET DATA TYPE "public"."outbox_status" USING "status"::"public"."outbox_status";--> statement-breakpoint
+CREATE INDEX "ix_sprints_active" ON "work"."sprints" USING btree ("project_id","status") WHERE status = 'active';--> statement-breakpoint
+CREATE INDEX "ix_outbox_status" ON "messaging"."outbox_events" USING btree ("status","created_at") WHERE status = 'pending';

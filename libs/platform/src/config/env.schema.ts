@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+const booleanish = (defaultValue: boolean) =>
+  z
+    .string()
+    .default(String(defaultValue))
+    .transform((v) => v === 'true');
+
 /**
  * Validated environment schema.
  * Process refuses to start if any required variable is missing or malformed.
@@ -69,10 +75,7 @@ export const EnvSchema = z.object({
   APP_BASE_URL: z.string().url().default('http://localhost:5173'),
 
   // Observability
-  OTEL_ENABLED: z
-    .string()
-    .default('false')
-    .transform((v) => v === 'true'),
+  OTEL_ENABLED: booleanish(false),
   OTEL_SERVICE_NAME: z.string().default('rally-api'),
   OTEL_WORKER_SERVICE_NAME: z.string().default('rally-worker'),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().default('http://localhost:4318'),
@@ -81,12 +84,13 @@ export const EnvSchema = z.object({
   /** Semver string injected into OTEL resource and Pino logs. */
   SERVICE_VERSION: z.string().default('dev'),
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
+  LOG_PRETTY: booleanish(false),
+  LOG_SQL: booleanish(false),
+  LOG_HTTP_BODIES: booleanish(false),
+  LOG_DEV_EMAIL_CONTENT: booleanish(false),
 
   // Resilience
-  RESILIENCE_ENABLED: z
-    .string()
-    .default('true')
-    .transform((v) => v === 'true'),
+  RESILIENCE_ENABLED: booleanish(true),
 
   // Rate limiting (per-user sliding window)
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),

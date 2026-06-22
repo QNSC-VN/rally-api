@@ -3,6 +3,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { LoggerModule } from 'nestjs-pino';
 import { trace, isSpanContextValid } from '@opentelemetry/api';
 import { requestContextStorage } from '@platform/context/request-context';
+import { ConfigService } from '@nestjs/config';
 import { PlatformModule } from '@platform';
 import { AuditModule } from '@modules/audit';
 import { NotificationsModule } from '@modules/notifications';
@@ -21,28 +22,42 @@ import { NotificationRelayService } from './notifications/notification-relay.ser
  */
 @Module({
   imports: [
-    LoggerModule.forRoot({
-      pinoHttp: {
-        level: process.env['LOG_LEVEL'] ?? 'info',
-        customProps: () => ({ service: 'rally-worker' }),
-        mixin: () => {
-          const result: Record<string, unknown> = {};
-          const span = trace.getActiveSpan();
-          if (span) {
-            const ctx = span.spanContext();
-            if (isSpanContextValid(ctx)) {
-              result['trace.id'] = ctx.traceId;
-              result['span.id'] = ctx.spanId;
-            }
-          }
-          const reqCtx = requestContextStorage.getStore();
-          if (reqCtx) {
-            if (reqCtx.tenantId) result['tenantId'] = reqCtx.tenantId;
-            if (reqCtx.userId) result['userId'] = reqCtx.userId;
-            if (reqCtx.correlationId) result['correlationId'] = reqCtx.correlationId;
-          }
-          return result;
-        },
+    LoggerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const isDev = configService.get<string>('NODE_ENV') !== 'production';
+        const prettyLogs = configService.get<boolean>('LOG_PRETTY') ?? isDev;
+        return {
+          pinoHttp: {
+            level: configService.get<string>('LOG_LEVEL') ?? 'info',
+            transport: prettyLogs
+              ? { target: 'pino-pretty', options: { colorize: true, singleLine: false } }
+              : undefined,
+            customProps: () => ({
+              service: 'rally-worker',
+              env: configService.get<string>('NODE_ENV'),
+              version: configService.get<string>('SERVICE_VERSION'),
+            }),
+            mixin: () => {
+              const result: Record<string, unknown> = {};
+              const span = trace.getActiveSpan();
+              if (span) {
+                const ctx = span.spanContext();
+                if (isSpanContextValid(ctx)) {
+                  result['trace.id'] = ctx.traceId;
+                  result['span.id'] = ctx.spanId;
+                }
+              }
+              const reqCtx = requestContextStorage.getStore();
+              if (reqCtx) {
+                if (reqCtx.tenantId) result['tenantId'] = reqCtx.tenantId;
+                if (reqCtx.userId) result['userId'] = reqCtx.userId;
+                if (reqCtx.correlationId) result['correlationId'] = reqCtx.correlationId;
+              }
+              return result;
+            },
+          },
+        };
       },
     }),
     ScheduleModule.forRoot(),

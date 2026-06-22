@@ -30,11 +30,12 @@ import { AsyncLocalStorageMiddleware } from '@platform/context/als.middleware';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
         const isDev = configService.get<string>('NODE_ENV') !== 'production';
+        const prettyLogs = configService.get<boolean>('LOG_PRETTY') ?? isDev;
         return {
           pinoHttp: {
             level: configService.get<string>('LOG_LEVEL') ?? 'info',
             // pino-pretty for human-readable logs in dev; JSON in prod for log aggregators
-            transport: isDev
+            transport: prettyLogs
               ? { target: 'pino-pretty', options: { colorize: true, singleLine: false } }
               : undefined,
             // Never log credentials in any environment
@@ -52,6 +53,8 @@ import { AsyncLocalStorageMiddleware } from '@platform/context/als.middleware';
             autoLogging: false,
             customProps: () => ({
               service: 'rally-api',
+              env: configService.get<string>('NODE_ENV'),
+              version: configService.get<string>('SERVICE_VERSION'),
             }),
             // mixin: called on every log write — injects active OTEL trace context
             // and ALS request context (tenantId, userId, correlationId) automatically.

@@ -35,7 +35,7 @@ export class DrizzleProvider {
       connectionTimeoutMillis: 5_000,
     });
 
-    this.db = drizzle(this.pool, { schema, logger: config.get('NODE_ENV') === 'development' });
+    this.db = drizzle(this.pool, { schema, logger: config.get('LOG_SQL') });
   }
 
   get instance(): DrizzleDB {
