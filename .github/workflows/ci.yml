@@ -266,20 +266,13 @@ jobs:
           RESILIENCE_ENABLED: 'false'
 
       - name: Upload OpenAPI spec artifact
-        uses: actions/upload-artifact@v4
+        uses: nghiavan0610/rally-gitops/actions/publish-openapi-spec@main
         with:
-          name: openapi-spec-${{ github.sha }}
-          path: openapi.json
-          retention-days: 30
+          spec-path: openapi.json
+          artifact-name: openapi-spec-${{ github.sha }}
+          retention-days: "30"
 
       # On PRs: download the base-branch spec and diff for breaking changes.
-      # Uses oasdiff — fast Go binary, no Docker needed.
-      - name: Install oasdiff
-        if: github.event_name == 'pull_request'
-        run: |
-          curl -sSL https://github.com/tufin/oasdiff/releases/latest/download/oasdiff_linux_amd64.tar.gz \
-            | tar -xz -C /usr/local/bin oasdiff
-
       - name: Download base spec
         if: github.event_name == 'pull_request'
         uses: dawidd6/action-download-artifact@v6
@@ -291,9 +284,12 @@ jobs:
           path: base-spec/
 
       - name: Breaking change check
-        if: github.event_name == 'pull_request' && hashFiles('base-spec/openapi.json') != ''
-        run: |
-          oasdiff breaking base-spec/openapi.json openapi.json --fail-on ERR
+        if: github.event_name == 'pull_request'
+        uses: nghiavan0610/rally-gitops/actions/validate-openapi-contract@main
+        with:
+          current-spec-path: openapi.json
+          base-spec-path: base-spec/openapi.json
+          fail-on-breaking: "true"
 
   # ─────────────────────────────────────────────────────────────────────────
   # 5. PR title lint — enforce Conventional Commits format on the PR title.

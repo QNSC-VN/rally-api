@@ -19,17 +19,38 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 4 * * 1'   # weekly Monday 04:00 UTC — catch new CVEs between pushes
+    - cron: "0 4 * * 1" # weekly Monday 04:00 UTC — catch new CVEs between pushes
 
 concurrency:
   group: security-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '22'
-  PNPM_VERSION: '10.33.2'
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10.33.2"
 
 jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # 0. Gitleaks — scan repo history for committed secrets.
+  #    Cheap, AWS-free, and a good fit for the shared gitops action.
+  # ─────────────────────────────────────────────────────────────────────────
+  secrets:
+    name: Secret scan (Gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: nghiavan0610/rally-gitops/actions/scan-secrets@main
+        with:
+          fail-on-leak: "true"
+          scan-depth: "0"
+
   # ─────────────────────────────────────────────────────────────────────────
   # 1. Trivy — scan the built Docker image for OS + library CVEs.
   #    Blocks on CRITICAL severity. HIGH is reported but non-blocking until
@@ -39,7 +60,7 @@ jobs:
     name: Container security scan (Trivy)
     runs-on: ubuntu-latest
     permissions:
-      security-events: write   # upload SARIF to GitHub Security tab
+      security-events: write # upload SARIF to GitHub Security tab
       contents: read
 
     steps:
@@ -55,20 +76,20 @@ jobs:
           push: false
           load: true
           tags: rally-api:scan
-          cache-from: type=gha,scope=api   # reuses cache from CI build job if available
+          cache-from: type=gha,scope=api # reuses cache from CI build job if available
 
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: rally-api:scan
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH
-          exit-code: '1'          # fail on CRITICAL
-          ignore-unfixed: true    # skip CVEs with no fix available
+          exit-code: "1" # fail on CRITICAL
+          ignore-unfixed: true # skip CVEs with no fix available
 
       - name: Upload Trivy SARIF to GitHub Security
-        if: always()             # upload even if scan failed
+        if: always() # upload even if scan failed
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
