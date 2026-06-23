@@ -150,7 +150,7 @@ jobs:
             --query 'service.serviceName' --output text
 
       - name: Wait for api service to stabilize
-        uses: nghiavan0610/rally-gitops/actions/verify-ecs-deploy@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: nghiavan0610/qncs-gitops/actions/verify-ecs-deploy@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
         with:
           cluster: ${{ vars.ECS_CLUSTER }}
           service: ${{ vars.ECS_API_SERVICE }}
@@ -159,7 +159,7 @@ jobs:
           timeout-seconds: '600'
 
       - name: Wait for worker service to stabilize
-        uses: nghiavan0610/rally-gitops/actions/verify-ecs-deploy@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: nghiavan0610/qncs-gitops/actions/verify-ecs-deploy@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
         with:
           cluster: ${{ vars.ECS_CLUSTER }}
           service: ${{ vars.ECS_WORKER_SERVICE }}
