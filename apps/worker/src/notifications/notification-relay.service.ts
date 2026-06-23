@@ -31,7 +31,7 @@ import { InjectDrizzle, Span } from '@platform';
 import type { DrizzleDB, DrizzleTx } from '@platform';
 import { AbstractOutboxRelay } from '@platform/outbox';
 import type { PostCommitTask } from '@platform/outbox';
-import { NotificationsService } from '@modules/notifications';
+import { NotificationsService, NotificationPreferencesService } from '@modules/notifications';
 import { renderNotification, NotificationPubSubService } from '@platform/notifications';
 import type { NotificationTemplateName, NotificationTemplateVars } from '@platform/notifications';
 import { notificationOutbox } from '../../../../db/schema/messaging';
@@ -59,6 +59,7 @@ export class NotificationRelayService
     @InjectDrizzle() db: DrizzleDB,
     private readonly notificationsService: NotificationsService,
     private readonly pubSub: NotificationPubSubService,
+    private readonly prefs: NotificationPreferencesService,
   ) {
     super(db);
   }
@@ -120,6 +121,17 @@ export class NotificationRelayService
    * in_app_notifications via source_event_id) — no SSE push needed.
    */
   protected async processRow(row: NotificationOutboxRow): Promise<PostCommitTask | void> {
+    // Skip in-app delivery if user has opted out (preference check uses pool connection,
+    // outside the FOR UPDATE SKIP LOCKED transaction — eventual consistency is acceptable).
+    const inAppEnabled = await this.prefs.isInAppEnabled(row.tenantId, row.recipientId, row.type);
+    if (!inAppEnabled) {
+      this.logger.debug(
+        { recipientId: row.recipientId, type: row.type },
+        'In-app notification suppressed by preference',
+      );
+      return; // AbstractOutboxRelay marks the row as sent
+    }
+
     const rendered = renderNotification(
       row.type as NotificationTemplateName,
       row.vars as NotificationTemplateVars[NotificationTemplateName],

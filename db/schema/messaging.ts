@@ -86,6 +86,15 @@ export const emailOutbox = messagingSchema.table(
      * schedule() call is silently swallowed within the same DB transaction.
      */
     idempotencyKey: varchar('idempotency_key', { length: 255 }).unique(),
+    /**
+     * Optional: the internal user ID this email was scheduled for.
+     * Populated for notification emails (e.g. access_request.approved).
+     * NULL for transactional emails without a known recipient user
+     * (e.g. password reset sent to an external address).
+     * Used by EmailRelayService to check notification_preferences.
+     */
+    recipientId: uuid('recipient_id'),
+    tenantId: uuid('tenant_id'),
   },
   (t) => ({
     statusIdx: index('ix_email_outbox_status')

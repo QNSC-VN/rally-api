@@ -15,6 +15,7 @@ import type { PostCommitTask } from '@platform/outbox';
 import { EmailService } from '@platform/email';
 import type { EmailTemplateName, EmailTemplateVars } from '@platform/email';
 import { NotificationPubSubService } from '@platform/notifications';
+import { NotificationPreferencesService } from '@modules/notifications';
 import { emailOutbox } from '../../../../db/schema/messaging';
 
 type EmailOutboxRow = {
@@ -24,6 +25,9 @@ type EmailOutboxRow = {
   vars: unknown;
   attempts: number;
   idempotencyKey: string | null;
+  /** Set for notification emails; null for transactional (password-reset, invitations). */
+  recipientId: string | null;
+  tenantId: string | null;
 };
 
 @Injectable()
@@ -37,6 +41,7 @@ export class EmailRelayService
     @InjectDrizzle() db: DrizzleDB,
     private readonly emailService: EmailService,
     private readonly pubSub: NotificationPubSubService,
+    private readonly prefs: NotificationPreferencesService,
   ) {
     super(db);
   }
@@ -71,6 +76,8 @@ export class EmailRelayService
         vars: emailOutbox.vars,
         attempts: emailOutbox.attempts,
         idempotencyKey: emailOutbox.idempotencyKey,
+        recipientId: emailOutbox.recipientId,
+        tenantId: emailOutbox.tenantId,
       })
       .from(emailOutbox)
       .where(and(eq(emailOutbox.status, 'pending'), lt(emailOutbox.attempts, this.maxAttempts)))
@@ -80,6 +87,23 @@ export class EmailRelayService
   }
 
   protected async processRow(row: EmailOutboxRow): Promise<PostCommitTask | void> {
+    // If this email is linked to an internal user, check their email preference.
+    // Transactional emails (password reset, invitations) have no recipientId and always send.
+    if (row.recipientId && row.tenantId) {
+      const emailEnabled = await this.prefs.isEmailEnabled(
+        row.tenantId,
+        row.recipientId,
+        row.template,
+      );
+      if (!emailEnabled) {
+        this.logger.debug(
+          { recipientId: row.recipientId, template: row.template },
+          'Email suppressed by preference',
+        );
+        return; // AbstractOutboxRelay marks the row as sent
+      }
+    }
+
     await this.emailService.sendTemplate(
       row.to,
       row.template as EmailTemplateName,

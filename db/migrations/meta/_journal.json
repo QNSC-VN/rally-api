@@ -71,6 +71,13 @@
       "when": 1782200002000,
       "tag": "0009_work_item_list_index",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782232472866,
+      "tag": "0010_slow_blindfold",
+      "breakpoints": true
     }
   ]
 }
