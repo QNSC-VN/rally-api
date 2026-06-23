@@ -57,6 +57,13 @@ export abstract class AbstractOutboxRelay<TRow extends { id: string; attempts: n
 
   protected readonly logger: Logger;
   private isRelaying = false;
+  /**
+   * Set to true when relay() is called while isRelaying=true.
+   * Guarantees one more relay run after the current one completes so that rows
+   * inserted during a long relay batch are not left waiting for the next cron
+   * tick (up to 5 s).  Uses setImmediate to avoid stack overflow on bursts.
+   */
+  private wakeOnComplete = false;
 
   constructor(protected readonly db: DrizzleDB) {
     // Logger name is the concrete subclass name for precise log attribution.
@@ -112,7 +119,10 @@ export abstract class AbstractOutboxRelay<TRow extends { id: string; attempts: n
    */
   async relay(): Promise<void> {
     if (this.isRelaying) {
-      this.logger.warn('Previous relay run still in progress — skipping tick');
+      // Record that a wake arrived while the relay was busy so we schedule one
+      // more run after the current batch completes.  Without this, rows inserted
+      // during a long relay batch would wait up to 5 s for the next cron tick.
+      this.wakeOnComplete = true;
       return;
     }
     this.isRelaying = true;
@@ -156,6 +166,13 @@ export abstract class AbstractOutboxRelay<TRow extends { id: string; attempts: n
       }
     } finally {
       this.isRelaying = false;
+      // If a wake arrived while we were busy, schedule one more run immediately.
+      if (this.wakeOnComplete) {
+        this.wakeOnComplete = false;
+        setImmediate(() =>
+          this.relay().catch((err) => this.logger.error({ err }, 'Post-wake relay failed')),
+        );
+      }
     }
   }
 }

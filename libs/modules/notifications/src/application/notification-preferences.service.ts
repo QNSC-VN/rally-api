@@ -57,15 +57,14 @@ export class NotificationPreferencesService {
     const field: keyof Pick<NotificationPreference, 'inApp' | 'email'> =
       channel === 'in_app' ? 'inApp' : 'email';
 
-    // 1. Check exact type preference
-    const specific = await this.repo.findOne(tenantId, userId, type);
+    // Single query fetches both the specific-type row and the wildcard row.
+    const rows = await this.repo.findForCheck(tenantId, userId, type);
+    const specific = rows.find((r) => r.type === type);
     if (specific) return specific[field];
 
-    // 2. Check wildcard ('*') preference
-    const wildcard = await this.repo.findOne(tenantId, userId, '*');
+    const wildcard = rows.find((r) => r.type === '*');
     if (wildcard) return wildcard[field];
 
-    // 3. Default: enabled
     return true;
   }
 

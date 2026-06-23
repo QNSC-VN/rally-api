@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { InjectDrizzle } from '@platform';
 import type { DrizzleDB } from '@platform';
 import { notificationPreferences } from '../../../../../../db/schema/notifications';
@@ -43,6 +43,26 @@ export class NotificationPreferenceDrizzleRepository implements INotificationPre
       )
       .limit(1);
     return row ? this.mapRow(row) : null;
+  }
+
+  async findForCheck(
+    tenantId: string,
+    userId: string,
+    type: string,
+  ): Promise<NotificationPreference[]> {
+    // Fetches the specific type row AND the wildcard row in a single query.
+    // Returns 0-2 rows; callers resolve priority (specific > wildcard > default).
+    const rows = await this.db
+      .select()
+      .from(notificationPreferences)
+      .where(
+        and(
+          eq(notificationPreferences.tenantId, tenantId),
+          eq(notificationPreferences.userId, userId),
+          inArray(notificationPreferences.type, [type, '*']),
+        ),
+      );
+    return rows.map(this.mapRow);
   }
 
   async upsert(input: UpsertPreferenceInput): Promise<NotificationPreference> {
