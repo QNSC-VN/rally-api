@@ -37,6 +37,9 @@ concurrency:
   group: deploy-${{ inputs.environment }}
   cancel-in-progress: false   # never cancel an in-flight deploy/rollback
 
+permissions:
+  contents: read
+
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
@@ -46,6 +49,7 @@ jobs:
     name: Rollback ${{ inputs.environment }} → ${{ inputs.image_tag }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
+    timeout-minutes: 45
     permissions:
       id-token: write   # OIDC
       contents: read
@@ -146,7 +150,7 @@ jobs:
             --query 'service.serviceName' --output text
 
       - name: Wait for api service to stabilize
-        uses: nghiavan0610/rally-gitops/actions/verify-ecs-deploy@main
+        uses: nghiavan0610/rally-gitops/actions/verify-ecs-deploy@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
         with:
           cluster: ${{ vars.ECS_CLUSTER }}
           service: ${{ vars.ECS_API_SERVICE }}
@@ -155,7 +159,7 @@ jobs:
           timeout-seconds: '600'
 
       - name: Wait for worker service to stabilize
-        uses: nghiavan0610/rally-gitops/actions/verify-ecs-deploy@main
+        uses: nghiavan0610/rally-gitops/actions/verify-ecs-deploy@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
         with:
           cluster: ${{ vars.ECS_CLUSTER }}
           service: ${{ vars.ECS_WORKER_SERVICE }}

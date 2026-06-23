@@ -33,6 +33,9 @@ concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false   # never cancel a running deploy
 
+permissions:
+  contents: read
+
 env:
   NODE_VERSION: '22'
   PNPM_VERSION: '10.33.2'
@@ -46,6 +49,7 @@ jobs:
   context:
     name: Resolve context
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       environment: ${{ steps.ctx.outputs.environment }}
       image_tag:   ${{ steps.ctx.outputs.image_tag }}
@@ -69,6 +73,7 @@ jobs:
     name: Build & push to ECR
     runs-on: ubuntu-latest
     needs: context
+    timeout-minutes: 45
     permissions:
       id-token: write   # needed for OIDC
       contents: read
@@ -136,6 +141,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [context, build-push]
     environment: ${{ needs.context.outputs.environment }}
+    timeout-minutes: 45
     permissions:
       id-token: write
       contents: read

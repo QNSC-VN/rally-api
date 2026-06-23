@@ -25,6 +25,9 @@ concurrency:
   group: security-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   NODE_VERSION: "22"
   PNPM_VERSION: "10.33.2"
@@ -37,6 +40,7 @@ jobs:
   secrets:
     name: Secret scan (Gitleaks)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       security-events: write
       contents: read
@@ -46,10 +50,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: nghiavan0610/rally-gitops/actions/scan-secrets@main
+      - uses: nghiavan0610/rally-gitops/actions/scan-secrets@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
         with:
           fail-on-leak: "true"
           scan-depth: "0"
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: critical
 
   # ─────────────────────────────────────────────────────────────────────────
   # 1. Trivy — scan the built Docker image for OS + library CVEs.
@@ -59,6 +80,7 @@ jobs:
   trivy:
     name: Container security scan (Trivy)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       security-events: write # upload SARIF to GitHub Security tab
       contents: read
@@ -103,6 +125,7 @@ jobs:
   codeql:
     name: CodeQL SAST
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       security-events: write
       actions: read
@@ -117,7 +140,7 @@ jobs:
           languages: javascript-typescript
           queries: security-and-quality
 
-      - uses: nghiavan0610/rally-gitops/actions/setup-node-pnpm@main
+      - uses: nghiavan0610/rally-gitops/actions/setup-node-pnpm@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
         with:
           node-version: ${{ env.NODE_VERSION }}
           pnpm-version: ${{ env.PNPM_VERSION }}

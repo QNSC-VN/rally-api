@@ -12,6 +12,9 @@ on:
     - cron: '0 2 * * 1'   # every Monday 02:00 UTC
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   # ─────────────────────────────────────────────────────────────────────────
   # 1. Mark & close stale PRs / Issues
@@ -19,6 +22,7 @@ jobs:
   stale-prs:
     name: Mark & close stale PRs
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       issues: write
       pull-requests: write
@@ -53,6 +57,7 @@ jobs:
   delete-merged-branches:
     name: Delete merged branches
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:

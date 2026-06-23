@@ -360,9 +360,11 @@ describe('AuthService', () => {
       const hash = await argon2.hash('correct-pass', { type: argon2.argon2id });
       userRepo.findById.mockResolvedValue(mockUser({ passwordHash: hash }));
 
-      await expect(service.changePassword('user-1', 'wrong-pass', 'new')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      await expect(service.changePassword('user-1', 'wrong-pass', 'new')).rejects.toMatchObject({
+        code: 'AUTH_INVALID_CREDENTIALS',
+        message: 'Current password is incorrect',
+        httpStatus: 400,
+      });
     });
   });
 
