@@ -40,6 +40,15 @@ export class NotificationsService {
     return this.notificationRepo.countUnread(actor.tenantId, actor.sub);
   }
 
+  /**
+   * Returns notifications created after `afterId` (exclusive), oldest-first.
+   * Called by the SSE controller on reconnect when the client sends
+   * `Last-Event-ID` to replay events missed during the disconnected gap.
+   */
+  async listMissed(actor: JwtPayload, afterId: string, limit = 30): Promise<Notification[]> {
+    return this.notificationRepo.listSince(actor.tenantId, actor.sub, afterId, limit);
+  }
+
   /** Internal use — called by other services / event handlers to emit notifications. */
   async send(input: Omit<CreateNotificationInput, 'id'>): Promise<Notification | null> {
     const notification = await this.notificationRepo.create({

@@ -20,7 +20,7 @@ import type { EmailCategory } from '../email.provider';
 
 // ── Template name registry ───────────────────────────────────────────────────
 
-export type EmailTemplateName = 'password-reset' | 'workspace-invitation';
+export type EmailTemplateName = 'password-reset' | 'workspace-invitation' | 'notification';
 
 // ── Per-template variable shapes (type-safe) ─────────────────────────────────
 
@@ -35,6 +35,19 @@ export interface EmailTemplateVars {
     workspaceName: string;
     expiresInDays: string; // e.g. "7"
     recipientEmail: string;
+  };
+  /**
+   * Generic in-app notification delivered via email.
+   * Used by NotificationRelayService when the user's email preference is enabled.
+   * title/body come directly from the rendered in-app notification template.
+   */
+  notification: {
+    title: string;
+    body?: string;
+    /** Human-readable resource label, e.g. "work item" or "workspace invitation". */
+    resourceType?: string;
+    /** Deep-link URL into the app for the relevant resource. */
+    appUrl: string;
   };
 }
 
@@ -241,11 +254,53 @@ function workspaceInvitation(vars: EmailTemplateVars['workspace-invitation']): R
 
 // ── Registry (maps template name → renderer) ─────────────────────────────────
 
+function notification(vars: EmailTemplateVars['notification']): RenderedEmail {
+  const subject = vars.title;
+
+  const bodyHtml = `
+    <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="border-bottom:1px solid #edf0f4;">
+      <tr><td style="padding:28px 32px 24px;">
+        <p style="margin:0 0 4px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:#8c94a6;">Notification</p>
+        <h1 style="margin:0;font-size:18px;font-weight:600;color:#1a2234;line-height:1.4;">${vars.title}</h1>
+      </td></tr>
+    </table>
+    <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+      <tr><td style="padding:24px 32px;">
+        ${vars.body ? `<p style="margin:0 0 20px;font-size:13px;line-height:1.7;color:#3d4451;">${vars.body}</p>` : ''}
+        <table cellpadding="0" cellspacing="0" role="presentation">
+          <tr><td style="border-radius:6px;background:#1d3f73;">
+            <a href="${vars.appUrl}"
+               style="display:inline-block;padding:10px 24px;font-size:13px;font-weight:600;color:#fff;text-decoration:none;border-radius:6px;line-height:1;">
+              View in Mini Rally
+            </a>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>`;
+
+  const text = [
+    vars.title,
+    '',
+    ...(vars.body ? [vars.body, ''] : []),
+    `Open in Mini Rally: ${vars.appUrl}`,
+    '',
+    '— Mini Rally',
+  ].join('\n');
+
+  return {
+    subject,
+    html: layout(subject, vars.title, bodyHtml),
+    text,
+    category: 'marketing' as const,
+  };
+}
+
 const TEMPLATES: {
   [K in EmailTemplateName]: (vars: EmailTemplateVars[K]) => RenderedEmail;
 } = {
   'password-reset': passwordReset,
   'workspace-invitation': workspaceInvitation,
+  notification: notification,
 };
 
 /**

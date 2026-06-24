@@ -231,6 +231,34 @@ export class ProjectsService {
     }
   }
 
+  /**
+   * Used by work-items to validate that a proposed assignee is an active member
+   * of the workspace that owns the project (P1-15 scope validation).
+   */
+  async assertWorkspaceMember(workspaceId: string, userId: string): Promise<void> {
+    const member = await this.workspaceMemberRepo.findMember(workspaceId, userId);
+    if (!member || member.status !== 'active') {
+      throw new PreconditionFailedException(
+        'ASSIGNEE_NOT_WORKSPACE_MEMBER',
+        'The assigned user is not an active member of this workspace',
+      );
+    }
+  }
+
+  /**
+   * Used by work-items to validate that a label belongs to the project (P1-15
+   * scope validation).
+   */
+  async assertLabelBelongsToProject(projectId: string, labelId: string): Promise<void> {
+    const label = await this.labelRepo.findById(labelId);
+    if (!label || label.projectId !== projectId) {
+      throw new NotFoundException(
+        'LABEL_NOT_FOUND',
+        'Label not found or does not belong to this project',
+      );
+    }
+  }
+
   /** Used by work-items to generate the next sequential item key (e.g. "PROJ-42"). */
   async generateItemKey(tenantId: string, projectId: string): Promise<string> {
     const project = await this.getProject(tenantId, projectId);

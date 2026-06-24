@@ -11,6 +11,7 @@ import {
   text,
   boolean,
   integer,
+  numeric,
   timestamp,
   date,
   jsonb,
@@ -26,6 +27,7 @@ import {
   projectTeamStatusEnum,
   workItemTypeEnum,
   workItemPriorityEnum,
+  workItemScheduleStateEnum,
   workflowStatusCategoryEnum,
   sprintStatusEnum,
   releaseStatusEnum,
@@ -84,19 +86,31 @@ export const workItems = workSchema.table(
     title: varchar('title', { length: 500 }).notNull(),
     description: text('description'),
     statusId: uuid('status_id').notNull(),
-    priority: workItemPriorityEnum('priority').notNull().default('medium'),
+    // Sidebar "Flow State" is rendered from statusId → workflow_statuses.
+    // scheduleState is the orthogonal Rally business-maturity dimension.
+    scheduleState: workItemScheduleStateEnum('schedule_state').notNull().default('defined'),
+    priority: workItemPriorityEnum('priority').notNull().default('none'),
     assigneeId: uuid('assignee_id'),
     reporterId: uuid('reporter_id'),
     parentId: uuid('parent_id'),
+    teamId: uuid('team_id'),
     iterationId: uuid('iteration_id'),
     releaseId: uuid('release_id'),
     storyPoints: integer('story_points'),
+    // Task time tracking (hours). actual is manual entry in Phase 1.
+    estimateHours: numeric('estimate_hours', { precision: 8, scale: 2 }),
+    todoHours: numeric('todo_hours', { precision: 8, scale: 2 }),
+    actualHours: numeric('actual_hours', { precision: 8, scale: 2 }),
     acceptanceCriteria: text('acceptance_criteria'),
+    // Dedicated rich-text fields (sanitized server-side), distinct from comments.
+    notes: text('notes'),
+    releaseNotes: text('release_notes'),
     isBlocked: boolean('is_blocked').notNull().default(false),
     blockedReason: text('blocked_reason'),
     rank: varchar('rank', { length: 255 }).notNull().default(''),
     customFields: jsonb('custom_fields').notNull().default({}),
     createdBy: uuid('created_by').notNull(),
+    updatedBy: uuid('updated_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -112,8 +126,13 @@ export const workItems = workSchema.table(
     listIdx: index('ix_wi_list')
       .on(t.tenantId, t.projectId, t.createdAt)
       .where(sql`deleted_at IS NULL`),
+    // Task-list-under-parent hot path (Tasks tab + totals aggregation).
+    tasksIdx: index('ix_wi_tasks')
+      .on(t.parentId, t.rank)
+      .where(sql`type = 'task' AND deleted_at IS NULL`),
     assigneeIdx: index('ix_wi_assignee').on(t.tenantId, t.assigneeId),
     parentIdx: index('ix_wi_parent').on(t.parentId),
+    teamIdx: index('ix_wi_team').on(t.teamId),
     iterationIdx: index('ix_wi_iteration').on(t.iterationId),
     releaseIdx: index('ix_wi_release').on(t.releaseId),
     blockedIdx: index('ix_wi_blocked')
@@ -401,5 +420,39 @@ export const projectMembers = workSchema.table(
     projectIdx: index('ix_pm_project').on(t.projectId),
     userIdx: index('ix_pm_user').on(t.userId),
     uniqueMember: uniqueIndex('uq_project_member').on(t.projectId, t.userId),
+  }),
+);
+
+// ── activity_logs (Revision History — sync, same-tx, read-your-writes) ──────
+//
+// Product-facing revision feed shown in the Work Item / Task "Revision History"
+// tab. Written in the SAME transaction as the mutation so the actor sees their
+// change immediately. Deliberately SEPARATE from audit.audit_logs (async,
+// outbox-fed, SOC2 compliance) — different consistency, retention and access.
+// Append-only; never stores rich-text bodies, secrets or tokens.
+
+export const activityLogs = workSchema.table(
+  'activity_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    // Anchor row: parent work item id for both item and task activity, so the
+    // item history can show task changes too. entityId is the concrete subject.
+    workItemId: uuid('work_item_id').notNull(),
+    entityType: varchar('entity_type', { length: 30 }).notNull(), // 'work_item' | 'task' | 'attachment'
+    entityId: uuid('entity_id').notNull(),
+    actorId: uuid('actor_id'), // null = system action
+    action: varchar('action', { length: 60 }).notNull(), // e.g. 'work_item.assigned'
+    // { field, old, new } — short scalar values only, never rich-text body.
+    changes: jsonb('changes'),
+    metadata: jsonb('metadata').notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    tenantIdx: index('ix_activity_tenant').on(t.tenantId),
+    // Primary read path: history for one work item, newest first.
+    workItemIdx: index('ix_activity_work_item').on(t.workItemId, t.createdAt),
+    projectIdx: index('ix_activity_project').on(t.projectId),
   }),
 );

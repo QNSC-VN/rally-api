@@ -164,6 +164,38 @@ export class ProjectsController {
     return toProjectDto(project);
   }
 
+  // ── Archive project ────────────────────────────────────────────────────────
+
+  @Post(':id/archive')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Archive a project (sets status to archived, becomes read-only)' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: ProjectResponseDto })
+  @ApiCommonErrors(401, 403, 404, 422)
+  async archiveProject(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ProjectResponseDto> {
+    const project = await this.projectsService.updateProject(user, id, { status: 'archived' });
+    return toProjectDto(project);
+  }
+
+  // ── Restore project ────────────────────────────────────────────────────────
+
+  @Post(':id/restore')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Restore an archived project back to active' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: ProjectResponseDto })
+  @ApiCommonErrors(401, 403, 404, 422)
+  async restoreProject(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ProjectResponseDto> {
+    const project = await this.projectsService.updateProject(user, id, { status: 'active' });
+    return toProjectDto(project);
+  }
+
   // ── Delete project ─────────────────────────────────────────────────────────
 
   @Delete(':id')

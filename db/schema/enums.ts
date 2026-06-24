@@ -67,11 +67,25 @@ export const workItemTypeEnum = pgEnum('work_item_type', [
   'defect',
 ]);
 
+// Defect priority (Rally vocabulary). Story items carry 'none' (UI shows —).
+// Migration 0011 remaps legacy critical→urgent, medium→normal.
 export const workItemPriorityEnum = pgEnum('work_item_priority', [
-  'critical',
-  'high',
-  'medium',
+  'none',
   'low',
+  'normal',
+  'high',
+  'urgent',
+]);
+
+// Rally-style ScheduleState: orthogonal business-maturity dimension, separate
+// from the per-project workflow engine (status_id → workflow_statuses).
+export const workItemScheduleStateEnum = pgEnum('work_item_schedule_state', [
+  'idea',
+  'defined',
+  'in_progress',
+  'completed',
+  'accepted',
+  'released',
 ]);
 
 export const workflowStatusCategoryEnum = pgEnum('workflow_status_category', [
@@ -114,6 +128,7 @@ export type ProjectMemberStatus = (typeof projectMemberStatusEnum.enumValues)[nu
 export type ProjectTeamStatus = (typeof projectTeamStatusEnum.enumValues)[number];
 export type WorkItemType = (typeof workItemTypeEnum.enumValues)[number];
 export type WorkItemPriority = (typeof workItemPriorityEnum.enumValues)[number];
+export type WorkItemScheduleState = (typeof workItemScheduleStateEnum.enumValues)[number];
 export type WorkflowStatusCategory = (typeof workflowStatusCategoryEnum.enumValues)[number];
 export type SprintStatus = (typeof sprintStatusEnum.enumValues)[number];
 export type ReleaseStatus = (typeof releaseStatusEnum.enumValues)[number];

@@ -20,9 +20,8 @@ import { uuidv7 } from 'uuidv7';
 import * as argon2 from 'argon2';
 import { and, eq } from 'drizzle-orm';
 import * as schema from '../schema';
-// projectMembers must be imported directly — the barrel export has a tsx/CJS
-// module-resolution edge case that causes it to be undefined at runtime.
-import { projectMembers } from '../schema/work';
+// Direct imports to avoid barrel tsx/CJS resolution edge cases at runtime.
+import { projectCounters, projectMembers, workItems } from '../schema/work';
 import { userRoleAssignments } from '../schema/access';
 import { DEFAULT_WORKFLOW_STATUSES } from '../../libs/modules/projects/src/domain/project.constants';
 
@@ -38,8 +37,15 @@ const db = drizzle(pool, { schema });
 const SYSTEM_TENANT_ID = '00000000-0000-7000-8000-000000000001';
 const ADMIN_USER_ID = '00000000-0000-7000-8000-000000000002';
 const WORKSPACE_ID = '00000000-0000-7000-8000-000000000003';
+const DEVELOPER_ID = '00000000-0000-7000-8000-000000000020';
+const VIEWER_ID = '00000000-0000-7000-8000-000000000021';
 
-// ── Sample projects ───────────────────────────────────────────────────────────
+// Fixed story IDs so tasks can reference them as parentId
+const NXP_STORY_1_ID = '00000000-0000-7000-8000-000000000030';
+const NXP_STORY_2_ID = '00000000-0000-7000-8000-000000000031';
+const MOB_STORY_1_ID = '00000000-0000-7000-8000-000000000032';
+
+// ── Seed data constants ───────────────────────────────────────────────────────
 // Format: { id, key, name, description }
 // All are owned by ADMIN_USER_ID and belong to the default workspace.
 const SEED_PROJECTS = [
@@ -158,6 +164,200 @@ async function seedProject(project: {
   }
 }
 
+// ── Seed work items ───────────────────────────────────────────────────────────
+// Realistic enterprise-style backlog for the first two projects.
+// Idempotent: uses onConflictDoNothing on the unique (projectId, itemKey) index.
+async function seedWorkItems() {
+  // Helper: look up status IDs by project + workflow category
+  async function getStatuses(projectId: string) {
+    const rows = await db
+      .select({
+        id: schema.workflowStatuses.id,
+        category: schema.workflowStatuses.category,
+        position: schema.workflowStatuses.position,
+      })
+      .from(schema.workflowStatuses)
+      .where(eq(schema.workflowStatuses.projectId, projectId))
+      .orderBy(schema.workflowStatuses.position);
+
+    return {
+      todo: rows.find((r) => r.category === 'to_do')?.id,
+      inProgress: rows.find((r) => r.category === 'in_progress')?.id,
+      done: rows.find((r) => r.category === 'done')?.id,
+    };
+  }
+
+  // ── NXP: NX Platform ───────────────────────────────────────────────────
+  const nxpId = SEED_PROJECTS[0].id;
+  const nxp = await getStatuses(nxpId);
+  if (nxp.todo && nxp.inProgress && nxp.done) {
+    const nxpItems = [
+      // Stories
+      {
+        id: NXP_STORY_1_ID,
+        itemKey: 'NXP-1',
+        type: 'story' as const,
+        title: 'Upgrade NX workspace to v21',
+        statusId: nxp.inProgress,
+        scheduleState: 'in_progress' as const,
+        priority: 'high' as const,
+        storyPoints: 5,
+        assigneeId: ADMIN_USER_ID,
+      },
+      {
+        id: NXP_STORY_2_ID,
+        itemKey: 'NXP-2',
+        type: 'story' as const,
+        title: 'Add Storybook 8 to component library',
+        statusId: nxp.todo,
+        scheduleState: 'defined' as const,
+        priority: 'normal' as const,
+        storyPoints: 3,
+        assigneeId: DEVELOPER_ID,
+      },
+      // Defect
+      {
+        id: uuidv7(),
+        itemKey: 'NXP-3',
+        type: 'defect' as const,
+        title: 'CI pipeline fails intermittently on Windows build agents',
+        statusId: nxp.inProgress,
+        scheduleState: 'in_progress' as const,
+        priority: 'urgent' as const,
+        assigneeId: ADMIN_USER_ID,
+      },
+      // Tasks under NXP-1
+      {
+        id: uuidv7(),
+        itemKey: 'NXP-4',
+        type: 'task' as const,
+        title: 'Update workspace.json for NX v21 breaking changes',
+        statusId: nxp.done,
+        scheduleState: 'completed' as const,
+        priority: 'high' as const,
+        parentId: NXP_STORY_1_ID,
+        assigneeId: DEVELOPER_ID,
+        estimateHours: '2',
+        actualHours: '1.5',
+      },
+      {
+        id: uuidv7(),
+        itemKey: 'NXP-5',
+        type: 'task' as const,
+        title: 'Validate all affected generators after upgrade',
+        statusId: nxp.inProgress,
+        scheduleState: 'in_progress' as const,
+        priority: 'high' as const,
+        parentId: NXP_STORY_1_ID,
+        assigneeId: ADMIN_USER_ID,
+        estimateHours: '3',
+        todoHours: '2',
+      },
+      // Feature
+      {
+        id: uuidv7(),
+        itemKey: 'NXP-6',
+        type: 'feature' as const,
+        title: 'Shared ESLint flat-config across all apps',
+        statusId: nxp.todo,
+        scheduleState: 'defined' as const,
+        priority: 'normal' as const,
+        storyPoints: 8,
+        assigneeId: DEVELOPER_ID,
+      },
+    ];
+
+    for (const item of nxpItems) {
+      await db
+        .insert(workItems)
+        .values({
+          ...item,
+          tenantId: SYSTEM_TENANT_ID,
+          projectId: nxpId,
+          createdBy: ADMIN_USER_ID,
+          rank: item.itemKey, // deterministic rank for seeded items
+        })
+        .onConflictDoNothing();
+    }
+    await db
+      .update(projectCounters)
+      .set({ lastItemNumber: nxpItems.length })
+      .where(eq(projectCounters.projectId, nxpId));
+  }
+
+  // ── MOB: Mobile App ────────────────────────────────────────────────────
+  const mobId = SEED_PROJECTS[1].id;
+  const mob = await getStatuses(mobId);
+  if (mob.todo && mob.inProgress && mob.done) {
+    const mobItems = [
+      {
+        id: MOB_STORY_1_ID,
+        itemKey: 'MOB-1',
+        type: 'story' as const,
+        title: 'Implement biometric authentication (Face ID / Fingerprint)',
+        statusId: mob.todo,
+        scheduleState: 'defined' as const,
+        priority: 'high' as const,
+        storyPoints: 8,
+        assigneeId: ADMIN_USER_ID,
+      },
+      {
+        id: uuidv7(),
+        itemKey: 'MOB-2',
+        type: 'story' as const,
+        title: 'Dark mode support across all screens',
+        statusId: mob.inProgress,
+        scheduleState: 'in_progress' as const,
+        priority: 'normal' as const,
+        storyPoints: 5,
+        assigneeId: DEVELOPER_ID,
+      },
+      {
+        id: uuidv7(),
+        itemKey: 'MOB-3',
+        type: 'defect' as const,
+        title: 'App crashes on Android 14 when rotating to landscape on Home screen',
+        statusId: mob.todo,
+        scheduleState: 'defined' as const,
+        priority: 'urgent' as const,
+        assigneeId: DEVELOPER_ID,
+      },
+      // Task under MOB-1
+      {
+        id: uuidv7(),
+        itemKey: 'MOB-4',
+        type: 'task' as const,
+        title: 'Integrate expo-local-authentication SDK',
+        statusId: mob.todo,
+        scheduleState: 'defined' as const,
+        priority: 'high' as const,
+        parentId: MOB_STORY_1_ID,
+        estimateHours: '4',
+        todoHours: '4',
+      },
+    ];
+
+    for (const item of mobItems) {
+      await db
+        .insert(workItems)
+        .values({
+          ...item,
+          tenantId: SYSTEM_TENANT_ID,
+          projectId: mobId,
+          createdBy: ADMIN_USER_ID,
+          rank: item.itemKey,
+        })
+        .onConflictDoNothing();
+    }
+    await db
+      .update(projectCounters)
+      .set({ lastItemNumber: mobItems.length })
+      .where(eq(projectCounters.projectId, mobId));
+  }
+
+  console.log('✅  Work items seeded');
+}
+
 async function seed() {
   console.log('Seeding...');
 
@@ -208,6 +408,43 @@ async function seed() {
       workspaceId: WORKSPACE_ID,
       userId: ADMIN_USER_ID,
     })
+    .onConflictDoNothing();
+
+  // ── Additional users: developer + viewer ─────────────────────────────────
+  const devHash = await argon2.hash('Dev@Rally2026!', { type: argon2.argon2id });
+  const viewerHash = await argon2.hash('Viewer@Rally2026!', { type: argon2.argon2id });
+  await db
+    .insert(schema.users)
+    .values([
+      {
+        id: DEVELOPER_ID,
+        tenantId: SYSTEM_TENANT_ID,
+        email: 'dev@acme.dev',
+        displayName: 'Alice Developer',
+        emailVerified: true,
+        locale: 'en',
+        timezone: 'Asia/Ho_Chi_Minh',
+        passwordHash: devHash,
+      },
+      {
+        id: VIEWER_ID,
+        tenantId: SYSTEM_TENANT_ID,
+        email: 'viewer@acme.dev',
+        displayName: 'Bob Viewer',
+        emailVerified: true,
+        locale: 'en',
+        timezone: 'Asia/Ho_Chi_Minh',
+        passwordHash: viewerHash,
+      },
+    ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(schema.workspaceMembers)
+    .values([
+      { tenantId: SYSTEM_TENANT_ID, workspaceId: WORKSPACE_ID, userId: DEVELOPER_ID },
+      { tenantId: SYSTEM_TENANT_ID, workspaceId: WORKSPACE_ID, userId: VIEWER_ID },
+    ])
     .onConflictDoNothing();
 
   // ── System roles ─────────────────────────────────────────────────────────
@@ -309,7 +546,22 @@ async function seed() {
     await seedProject(project);
   }
 
-  console.log(`✅  Seed complete — ${SEED_PROJECTS.length} projects seeded`);
+  // ── Add developer as NXP project member (so seeded assigneeId is valid) ──
+  await db
+    .insert(projectMembers)
+    .values({
+      id: uuidv7(),
+      tenantId: SYSTEM_TENANT_ID,
+      projectId: SEED_PROJECTS[0].id, // NXP
+      userId: DEVELOPER_ID,
+      status: 'active',
+    })
+    .onConflictDoNothing();
+
+  // ── Work items ────────────────────────────────────────────────────────────
+  await seedWorkItems();
+
+  console.log(`✅  Seed complete — ${SEED_PROJECTS.length} projects, 3 users, work items seeded`);
 }
 
 seed()

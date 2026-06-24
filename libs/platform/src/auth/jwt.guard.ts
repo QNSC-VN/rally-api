@@ -23,12 +23,28 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const result = await (super.canActivate(context) as Promise<boolean>);
+    let result: boolean;
+    try {
+      result = await (super.canActivate(context) as Promise<boolean>);
+    } catch (err) {
+      // Re-throw expected auth failures as-is; convert infra errors to 401 so
+      // NestJS never leaks a 500 to unauthenticated callers.
+      if (err instanceof UnauthorizedException) throw err;
+      this.logger.error({ err }, 'JWT strategy error during canActivate');
+      throw new UnauthorizedException('Authentication service unavailable');
+    }
     if (!result) return false;
 
     const req = context.switchToHttp().getRequest<{ user: { jti: string } }>();
-    if (await this.valkey.isTokenDenied(req.user.jti)) {
-      throw new UnauthorizedException('Token has been revoked');
+    try {
+      if (await this.valkey.isTokenDenied(req.user.jti)) {
+        throw new UnauthorizedException('Token has been revoked');
+      }
+    } catch (err) {
+      if (err instanceof UnauthorizedException) throw err;
+      // Token denylist is best-effort. If Valkey is unavailable we fail open so
+      // valid users aren't blocked — tokens still expire via their JWT exp claim.
+      this.logger.warn({ err }, 'Token denylist check failed; failing open');
     }
 
     return true;
@@ -38,8 +54,15 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     err: Error | null,
     user: TUser | false,
   ): TUser {
-    if (err || !user) {
-      throw err ?? new UnauthorizedException('Invalid or expired access token');
+    if (err) {
+      // Normalize unexpected infrastructure errors — don't re-throw raw DB/cache
+      // errors which would produce a 500. Expected auth errors are UnauthorizedException.
+      if (err instanceof UnauthorizedException) throw err;
+      this.logger.error({ err }, 'Unexpected error in JWT handleRequest');
+      throw new UnauthorizedException('Invalid or expired access token');
+    }
+    if (!user) {
+      throw new UnauthorizedException('Invalid or expired access token');
     }
 
     // Populate AsyncLocalStorage context after successful token verification

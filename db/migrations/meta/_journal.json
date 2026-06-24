@@ -78,6 +78,13 @@
       "when": 1782232472866,
       "tag": "0010_slow_blindfold",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782232472900,
+      "tag": "0011_phase1_work_items",
+      "breakpoints": true
     }
   ]
 }

@@ -1,8 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { WorkItemsService } from './work-items.service';
 import { WORK_ITEM_REPOSITORY } from '../domain/ports/work-item.repository';
+import { ACTIVITY_LOG_REPOSITORY } from '../domain/ports/activity-log.repository';
 import type { WorkItem } from '../domain/work-item.types';
-import { NotFoundException, PreconditionFailedException } from '@platform';
+import { NotFoundException, PreconditionFailedException, UnitOfWork } from '@platform';
 import { ProjectsService } from '@modules/projects';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -18,19 +19,27 @@ const mockWorkItem = (o: Partial<WorkItem> = {}): WorkItem => ({
   title: 'Test story',
   description: null,
   statusId: 'status-todo',
-  priority: 'medium',
+  scheduleState: 'defined',
+  priority: 'none',
   assigneeId: null,
   reporterId: null,
   parentId: null,
+  teamId: null,
   iterationId: null,
   releaseId: null,
   storyPoints: null,
+  estimateHours: null,
+  todoHours: null,
+  actualHours: null,
   acceptanceCriteria: null,
+  notes: null,
+  releaseNotes: null,
   isBlocked: false,
   blockedReason: null,
   rank: 'a1',
   customFields: {},
   createdBy: 'user-1',
+  updatedBy: null,
   createdAt: now,
   updatedAt: now,
   deletedAt: null,
@@ -66,6 +75,9 @@ const mockStatus = (id: string, isDefault = false) => ({
 const makeWorkItemRepo = () => ({
   findById: vi.fn(),
   listByProject: vi.fn(),
+  listBacklog: vi.fn(),
+  listTasksByParent: vi.fn(),
+  getTaskTotals: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
   softDelete: vi.fn().mockResolvedValue(undefined),
@@ -75,6 +87,16 @@ const makeWorkItemRepo = () => ({
   listLabels: vi.fn(),
 });
 
+const makeActivityRepo = () => ({
+  append: vi.fn().mockResolvedValue(undefined),
+  appendMany: vi.fn().mockResolvedValue(undefined),
+  listByWorkItem: vi.fn(),
+});
+
+const makeUnitOfWork = () => ({
+  run: vi.fn(async (cb: (tx: unknown) => unknown) => cb({})),
+});
+
 const makeProjectsService = () => ({
   getProject: vi.fn().mockResolvedValue({ id: 'proj-1', tenantId: 'tenant-1' }),
   listStatuses: vi
@@ -82,6 +104,7 @@ const makeProjectsService = () => ({
     .mockResolvedValue([mockStatus('status-todo', true), mockStatus('status-done')]),
   assertTransitionAllowed: vi.fn().mockResolvedValue(undefined),
   generateItemKey: vi.fn().mockResolvedValue('PROJ-42'),
+  listProjectTeams: vi.fn().mockResolvedValue([]),
 });
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -89,17 +112,23 @@ const makeProjectsService = () => ({
 describe('WorkItemsService', () => {
   let service: WorkItemsService;
   let workItemRepo: ReturnType<typeof makeWorkItemRepo>;
+  let activityRepo: ReturnType<typeof makeActivityRepo>;
   let projectsService: ReturnType<typeof makeProjectsService>;
+  let uow: ReturnType<typeof makeUnitOfWork>;
 
   beforeEach(async () => {
     workItemRepo = makeWorkItemRepo();
+    activityRepo = makeActivityRepo();
     projectsService = makeProjectsService();
+    uow = makeUnitOfWork();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WorkItemsService,
         { provide: WORK_ITEM_REPOSITORY, useValue: workItemRepo },
+        { provide: ACTIVITY_LOG_REPOSITORY, useValue: activityRepo },
         { provide: ProjectsService, useValue: projectsService },
+        { provide: UnitOfWork, useValue: uow },
       ],
     }).compile();
 
@@ -142,6 +171,7 @@ describe('WorkItemsService', () => {
       expect(result.itemKey).toBe('PROJ-42');
       expect(workItemRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ statusId: 'status-todo', tenantId: 'tenant-1' }),
+        expect.anything(),
       );
     });
 
@@ -154,6 +184,7 @@ describe('WorkItemsService', () => {
 
       expect(workItemRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ statusId: 'status-done' }),
+        expect.anything(),
       );
     });
 
@@ -173,12 +204,13 @@ describe('WorkItemsService', () => {
       );
     });
 
-    it('defaults priority to medium', async () => {
-      workItemRepo.create.mockResolvedValue(mockWorkItem({ priority: 'medium' }));
+    it('defaults priority to none', async () => {
+      workItemRepo.create.mockResolvedValue(mockWorkItem({ priority: 'none' }));
       await service.createWorkItem(mockActor, 'proj-1', 'story', 'Story');
 
       expect(workItemRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ priority: 'medium' }),
+        expect.objectContaining({ priority: 'none' }),
+        expect.anything(),
       );
     });
   });
@@ -215,7 +247,7 @@ describe('WorkItemsService', () => {
       workItemRepo.findById.mockResolvedValue(mockWorkItem());
       workItemRepo.update.mockResolvedValue(mockWorkItem({ title: 'Updated' }));
 
-      const result = await service.updateWorkItem('tenant-1', 'wi-1', { title: 'Updated' });
+      const result = await service.updateWorkItem(mockActor, 'wi-1', { title: 'Updated' });
       expect(result.title).toBe('Updated');
     });
 
@@ -223,7 +255,7 @@ describe('WorkItemsService', () => {
       workItemRepo.findById.mockResolvedValue(mockWorkItem({ statusId: 'status-todo' }));
       workItemRepo.update.mockResolvedValue(mockWorkItem({ statusId: 'status-done' }));
 
-      await service.updateWorkItem('tenant-1', 'wi-1', { statusId: 'status-done' });
+      await service.updateWorkItem(mockActor, 'wi-1', { statusId: 'status-done' });
 
       expect(projectsService.assertTransitionAllowed).toHaveBeenCalledWith(
         'proj-1',
@@ -236,7 +268,7 @@ describe('WorkItemsService', () => {
       workItemRepo.findById.mockResolvedValue(mockWorkItem({ statusId: 'status-todo' }));
       workItemRepo.update.mockResolvedValue(mockWorkItem());
 
-      await service.updateWorkItem('tenant-1', 'wi-1', { statusId: 'status-todo' });
+      await service.updateWorkItem(mockActor, 'wi-1', { statusId: 'status-todo' });
 
       expect(projectsService.assertTransitionAllowed).not.toHaveBeenCalled();
     });
@@ -268,14 +300,18 @@ describe('WorkItemsService', () => {
       workItemRepo.findById.mockResolvedValue(mockWorkItem({ statusId: 'status-todo' }));
       workItemRepo.update.mockResolvedValue(mockWorkItem({ statusId: 'status-done' }));
 
-      const result = await service.moveWorkItem('tenant-1', 'wi-1', 'status-done');
+      const result = await service.moveWorkItem(mockActor, 'wi-1', 'status-done');
 
       expect(projectsService.assertTransitionAllowed).toHaveBeenCalledWith(
         'proj-1',
         'status-todo',
         'status-done',
       );
-      expect(workItemRepo.update).toHaveBeenCalledWith('wi-1', { statusId: 'status-done' });
+      expect(workItemRepo.update).toHaveBeenCalledWith(
+        'wi-1',
+        expect.objectContaining({ statusId: 'status-done', updatedBy: 'user-1' }),
+        expect.anything(),
+      );
       expect(result.statusId).toBe('status-done');
     });
   });
@@ -291,7 +327,11 @@ describe('WorkItemsService', () => {
     it('validates each item belongs to tenant before reordering', async () => {
       workItemRepo.findById.mockResolvedValue(mockWorkItem());
       await service.reorderWorkItems('tenant-1', [{ id: 'wi-1', rank: 'b1' }]);
-      expect(workItemRepo.reorderItems).toHaveBeenCalledWith([{ id: 'wi-1', rank: 'b1' }]);
+      expect(workItemRepo.reorderItems).toHaveBeenCalledWith(
+        [{ id: 'wi-1', rank: 'b1' }],
+        'tenant-1',
+        expect.anything(),
+      );
     });
   });
 

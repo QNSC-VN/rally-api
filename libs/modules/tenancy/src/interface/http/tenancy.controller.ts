@@ -10,7 +10,14 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiExcludeEndpoint,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import {
   Auth,
   ApiCommonErrors,
@@ -154,8 +161,10 @@ export class WorkspaceController {
   }
 
   // ── Create workspace ───────────────────────────────────────────────────────
+  // MVP constraint: workspace provisioning is system-only (COMPANY-FR-010).
 
   @Post()
+  @ApiExcludeEndpoint()
   @ApiOperation({ summary: 'Create a new workspace' })
   @ApiResponse({ status: 201, type: WorkspaceResponseDto })
   @ApiCommonErrors(400, 401, 409, 422)
@@ -205,8 +214,10 @@ export class WorkspaceController {
   }
 
   // ── Delete workspace ───────────────────────────────────────────────────────
+  // MVP constraint: workspace archival is system-only (COMPANY-FR-010).
 
   @Delete(':id')
+  @ApiExcludeEndpoint()
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete workspace (soft delete)' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })

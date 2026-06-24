@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, count, desc, eq } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt } from 'drizzle-orm';
 import { InjectDrizzle } from '@platform';
 import type { DrizzleDB } from '@platform';
 import { inAppNotifications } from '../../../../../../db/schema/notifications';
@@ -98,5 +98,32 @@ export class NotificationDrizzleRepository implements INotificationRepository {
           eq(inAppNotifications.isRead, false),
         ),
       );
+  }
+
+  /**
+   * Returns notifications newer than afterId, oldest-first.
+   * UUIDv7 stores a 48-bit Unix timestamp in the high bits so
+   * lexicographic `>` is equivalent to chronological `>`.
+   * Limit is capped at 50 to prevent unbounded replay on very stale clients.
+   */
+  async listSince(
+    tenantId: string,
+    recipientId: string,
+    afterId: string,
+    limit: number,
+  ): Promise<Notification[]> {
+    const rows = await this.db
+      .select()
+      .from(inAppNotifications)
+      .where(
+        and(
+          eq(inAppNotifications.tenantId, tenantId),
+          eq(inAppNotifications.recipientId, recipientId),
+          gt(inAppNotifications.id, afterId),
+        ),
+      )
+      .orderBy(asc(inAppNotifications.id))
+      .limit(Math.min(limit, 50));
+    return rows as Notification[];
   }
 }

@@ -4,6 +4,7 @@ import { Logger } from 'nestjs-pino';
 import fastifyCookie from '@fastify/cookie';
 import fastifyCompress from '@fastify/compress';
 import fastifyHelmet from '@fastify/helmet';
+import fastifyMultipart from '@fastify/multipart';
 import { AppConfigService } from '@platform/config';
 
 export async function bootstrapApp(app: NestFastifyApplication): Promise<void> {
@@ -25,6 +26,11 @@ export async function bootstrapApp(app: NestFastifyApplication): Promise<void> {
 
   await app.register(fastifyCookie, {
     secret: config.get('CSRF_SECRET'),
+  });
+
+  // Multipart / file upload — 10 MB limit per file
+  await app.register(fastifyMultipart, {
+    limits: { fileSize: 10 * 1024 * 1024 /* 10 MB */, files: 1 },
   });
 
   // CORS

@@ -70,51 +70,6 @@ export async function teardown(): Promise<void> {
   console.log('[E2E] Containers stopped.');
 }
 
-export async function setup(): Promise<void> {
-  console.log('[E2E] Starting containers...');
-
-  [pgContainer, redisContainer] = await Promise.all([
-    new PostgreSqlContainer('postgres:17-alpine')
-      .withDatabase('rally_test')
-      .withUsername('rally_app')
-      .withPassword('rally_test_pw')
-      .start(),
-    new RedisContainer('redis:7-alpine').start(),
-  ]);
-
-  const dbUrl = pgContainer.getConnectionUri();
-  const redisUrl = redisContainer.getConnectionUrl();
-
-  // Run migrations
-  const pool = new Pool({ connectionString: dbUrl, max: 1 });
-  const db = drizzle(pool, { schema });
-  await migrate(db, {
-    migrationsFolder: path.join(__dirname, '..', 'db', 'migrations'),
-  });
-
-  // Seed test data
-  await seedTestData(db);
-
-  await pool.end();
-
-  // Expose connection strings for worker processes via globalThis (forks mode)
-  process.env['E2E_DATABASE_URL'] = dbUrl;
-  process.env['E2E_REDIS_URL'] = redisUrl;
-  // Also set as the standard env vars used by the app
-  process.env['DATABASE_URL'] = dbUrl;
-  process.env['REDIS_URL'] = redisUrl;
-
-  console.log('[E2E] Containers ready.');
-}
-
-export async function teardown(): Promise<void> {
-  await Promise.all([
-    pgContainer?.stop({ timeout: 10_000 }),
-    redisContainer?.stop({ timeout: 10_000 }),
-  ]);
-  console.log('[E2E] Containers stopped.');
-}
-
 // ── Seed data constants (exported so specs can reference them) ────────────────
 
 export const TEST_TENANT_ID = '00000000-0000-7000-8000-000000000001';
