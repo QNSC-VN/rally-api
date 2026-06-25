@@ -48,7 +48,15 @@ export class WorkItemDrizzleRepository implements IWorkItemRepository {
     if (filters.q) {
       const term = filters.q.trim();
       if (term) {
-        conditions.push(or(ilike(workItems.itemKey, term), ilike(workItems.title, `%${term}%`))!);
+        // Use Postgres full-text search (GIN index on search_vector, migration 0012).
+        // Falls back gracefully to ILIKE on item_key for exact key lookups (e.g. "E2E-1").
+        // plainto_tsquery handles multi-word queries without special syntax from the user.
+        conditions.push(
+          or(
+            ilike(workItems.itemKey, term),
+            sql`${workItems.searchVector} @@ plainto_tsquery('english', ${term})`,
+          )!,
+        );
       }
     }
     return conditions;

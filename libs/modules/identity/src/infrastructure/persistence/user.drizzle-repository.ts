@@ -3,8 +3,8 @@ import { and, eq, gt, isNull } from 'drizzle-orm';
 import { uuidv7 } from 'uuidv7';
 import { InjectDrizzle } from '@platform';
 import type { DrizzleDB, DbExecutor } from '@platform';
-import { users, passwordResetTokens } from '../../../../../../db/schema/identity';
-import type { User, UserStatus } from '../../domain/user.types';
+import { users, passwordResetTokens, ssoIdentities } from '../../../../../../db/schema/identity';
+import type { User, UserStatus, SsoIdentity } from '../../domain/user.types';
 import { IUserRepository } from '../../domain/ports/user.repository';
 
 @Injectable()
@@ -105,5 +105,89 @@ export class UserDrizzleRepository implements IUserRepository {
       .update(passwordResetTokens)
       .set({ usedAt: new Date() })
       .where(eq(passwordResetTokens.id, id));
+  }
+
+  // ── SSO ─────────────────────────────────────────────────────────────────────
+
+  async findSsoIdentity(provider: string, providerSub: string): Promise<SsoIdentity | null> {
+    const rows = await this.db
+      .select()
+      .from(ssoIdentities)
+      .where(and(eq(ssoIdentities.provider, provider), eq(ssoIdentities.providerSub, providerSub)))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  async upsertBySsoIdentity(
+    provider: string,
+    providerSub: string,
+    providerEmail: string,
+    displayName: string,
+    tenantId: string,
+    tx?: DbExecutor,
+  ): Promise<User> {
+    const executor = tx ?? this.db;
+
+    // 1. Check if this SSO identity is already linked
+    const existingIdentity = await this.findSsoIdentity(provider, providerSub);
+    if (existingIdentity) {
+      // Update email if it changed (Entra allows email changes)
+      if (existingIdentity.providerEmail !== providerEmail) {
+        await executor
+          .update(ssoIdentities)
+          .set({ providerEmail, updatedAt: new Date() })
+          .where(eq(ssoIdentities.id, existingIdentity.id));
+      }
+      const user = await this.findById(existingIdentity.userId);
+      return user!;
+    }
+
+    // 2. Try to match an existing user by email (account merge for pre-invited users)
+    const emailNormalized = providerEmail.toLowerCase().trim();
+    const existingUser = await this.db
+      .select()
+      .from(users)
+      .where(and(eq(users.email, emailNormalized), isNull(users.deletedAt)))
+      .limit(1)
+      .then((r) => r[0] ?? null);
+
+    if (existingUser) {
+      // Link the SSO identity to the existing user
+      await executor.insert(ssoIdentities).values({
+        id: uuidv7(),
+        tenantId: existingUser.tenantId,
+        userId: existingUser.id,
+        provider,
+        providerSub,
+        providerEmail,
+      });
+      return existingUser;
+    }
+
+    // 3. JIT provision: create new user + sso_identity in the specified tenant
+    const userId = uuidv7();
+    const [newUser] = await executor
+      .insert(users)
+      .values({
+        id: userId,
+        tenantId,
+        email: emailNormalized,
+        displayName,
+        status: 'active',
+        emailVerified: true, // Entra ID has already verified the email
+        passwordHash: null,
+      })
+      .returning();
+
+    await executor.insert(ssoIdentities).values({
+      id: uuidv7(),
+      tenantId,
+      userId,
+      provider,
+      providerSub,
+      providerEmail,
+    });
+
+    return newUser!;
   }
 }

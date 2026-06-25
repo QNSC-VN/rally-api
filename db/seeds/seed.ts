@@ -531,6 +531,48 @@ async function seed() {
       .onConflictDoNothing();
   }
 
+  // ── Developer role assignment (project_member) ────────────────────────────
+  const [memberRoleRow] = await db
+    .select({ id: schema.systemRoles.id })
+    .from(schema.systemRoles)
+    .where(eq(schema.systemRoles.slug, 'project_member'))
+    .limit(1);
+
+  if (memberRoleRow) {
+    await db
+      .insert(userRoleAssignments)
+      .values({
+        tenantId: SYSTEM_TENANT_ID,
+        userId: DEVELOPER_ID,
+        roleId: memberRoleRow.id,
+        scopeType: 'workspace',
+        scopeId: WORKSPACE_ID,
+        grantedBy: ADMIN_USER_ID,
+      })
+      .onConflictDoNothing();
+  }
+
+  // ── Viewer role assignment (project_viewer) ───────────────────────────────
+  const [viewerRoleRow] = await db
+    .select({ id: schema.systemRoles.id })
+    .from(schema.systemRoles)
+    .where(eq(schema.systemRoles.slug, 'project_viewer'))
+    .limit(1);
+
+  if (viewerRoleRow) {
+    await db
+      .insert(userRoleAssignments)
+      .values({
+        tenantId: SYSTEM_TENANT_ID,
+        userId: VIEWER_ID,
+        roleId: viewerRoleRow.id,
+        scopeType: 'workspace',
+        scopeId: WORKSPACE_ID,
+        grantedBy: ADMIN_USER_ID,
+      })
+      .onConflictDoNothing();
+  }
+
   // ── Subscription ─────────────────────────────────────────────────────────
   await db
     .insert(schema.subscriptions)

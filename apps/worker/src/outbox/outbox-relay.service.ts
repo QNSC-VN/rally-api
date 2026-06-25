@@ -17,7 +17,7 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 import { and, asc, lt, eq } from 'drizzle-orm';
-import { InjectDrizzle, AppConfigService, Span } from '@platform';
+import { InjectDrizzle, AppConfigService, ResilienceService, ResiliencePreset, Span } from '@platform';
 import type { DrizzleDB, DrizzleTx } from '@platform';
 import { AbstractOutboxRelay } from '@platform/outbox';
 import { outboxEvents } from '../../../../db/schema/messaging';
@@ -44,6 +44,7 @@ export class OutboxRelayService
   constructor(
     @InjectDrizzle() db: DrizzleDB,
     private readonly config: AppConfigService,
+    private readonly resilience: ResilienceService,
   ) {
     super(db);
   }
@@ -102,35 +103,39 @@ export class OutboxRelayService
     // No SNS topic configured (local dev) — ack without publishing.
     if (!this.topicArn) return;
 
-    await this.sns.send(
-      new PublishCommand({
-        TopicArn: this.topicArn,
-        Message: JSON.stringify({
-          // eventId is the deduplication key for downstream consumers.
-          // Including it allows idempotent processing via ON CONFLICT DO NOTHING.
-          eventId: row.id,
-          eventType: row.eventType,
-          aggregateType: row.aggregateType,
-          aggregateId: row.aggregateId,
-          tenantId: row.tenantId,
-          payload: row.payload,
-          occurredAt: row.occurredAt,
+    await this.resilience.execute(
+      'sns.publishOutboxEvent',
+      () => this.sns.send(
+        new PublishCommand({
+          TopicArn: this.topicArn,
+          Message: JSON.stringify({
+            // eventId is the deduplication key for downstream consumers.
+            // Including it allows idempotent processing via ON CONFLICT DO NOTHING.
+            eventId: row.id,
+            eventType: row.eventType,
+            aggregateType: row.aggregateType,
+            aggregateId: row.aggregateId,
+            tenantId: row.tenantId,
+            payload: row.payload,
+            occurredAt: row.occurredAt,
+          }),
+          MessageAttributes: {
+            eventType: {
+              DataType: 'String',
+              StringValue: row.eventType,
+            },
+            aggregateType: {
+              DataType: 'String',
+              StringValue: row.aggregateType,
+            },
+            tenantId: {
+              DataType: 'String',
+              StringValue: row.tenantId,
+            },
+          },
         }),
-        MessageAttributes: {
-          eventType: {
-            DataType: 'String',
-            StringValue: row.eventType,
-          },
-          aggregateType: {
-            DataType: 'String',
-            StringValue: row.aggregateType,
-          },
-          tenantId: {
-            DataType: 'String',
-            StringValue: row.tenantId,
-          },
-        },
-      }),
+      ),
+      ResiliencePreset.EXTERNAL_API,
     );
   }
 

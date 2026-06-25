@@ -27,6 +27,7 @@ import { Algorithm } from 'jsonwebtoken';
 import { IdempotencyInterceptor } from './http/idempotency.interceptor';
 import { HttpLoggingInterceptor } from './http/http-logging.interceptor';
 import { ResilienceModule } from './resilience/resilience.module';
+import { StorageService } from './storage/storage.service';
 
 @Global()
 @Module({
@@ -91,6 +92,7 @@ import { ResilienceModule } from './resilience/resilience.module';
     NotificationPubSubService,
     IdempotencyInterceptor,
     HttpLoggingInterceptor,
+    StorageService,
   ],
   exports: [
     AppConfigModule,
@@ -109,6 +111,7 @@ import { ResilienceModule } from './resilience/resilience.module';
     IdempotencyInterceptor,
     HttpLoggingInterceptor,
     ResilienceModule,
+    StorageService,
   ],
 })
 export class PlatformModule {}

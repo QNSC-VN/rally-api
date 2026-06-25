@@ -85,6 +85,27 @@
       "when": 1782232472900,
       "tag": "0011_phase1_work_items",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782300000000,
+      "tag": "0012_time_logs_watchers_fts",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782300001000,
+      "tag": "0013_attachment_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1782400000000,
+      "tag": "0014_sso_identities",
+      "breakpoints": true
     }
   ]
 }

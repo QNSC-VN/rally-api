@@ -8,8 +8,14 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 import * as argon2 from 'argon2';
+import { uuidv7 } from 'uuidv7';
+import { eq } from 'drizzle-orm';
 import path from 'path';
+import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import * as schema from '../db/schema';
+
+export const E2E_CONFIG_FILE = path.join(tmpdir(), 'rally-e2e-config.json');
 
 let pgContainer: StartedTestContainer;
 let redisContainer: StartedTestContainer;
@@ -25,7 +31,9 @@ export async function setup(): Promise<void> {
         POSTGRES_PASSWORD: 'rally_test_pw',
       })
       .withExposedPorts(5432)
-      .withWaitStrategy(Wait.forLogMessage('database system is ready to accept connections'))
+      // Wait for the SECOND occurrence: first fires during single-user recovery,
+      // second fires when PG is truly accepting client connections.
+      .withWaitStrategy(Wait.forLogMessage('database system is ready to accept connections', 2))
       .start(),
     new GenericContainer('redis:7-alpine')
       .withExposedPorts(6379)
@@ -41,19 +49,34 @@ export async function setup(): Promise<void> {
   const redisPort = redisContainer.getMappedPort(6379);
   const redisUrl = `redis://${redisHost}:${redisPort}`;
 
-  // Run migrations
-  const pool = new Pool({ connectionString: dbUrl, max: 1 });
+  // Run migrations with retry — gives PG a moment to fully stabilise
+  const pool = new Pool({ connectionString: dbUrl, max: 2, connectionTimeoutMillis: 10_000 });
   const db = drizzle(pool, { schema });
-  await migrate(db, {
-    migrationsFolder: path.join(__dirname, '..', 'db', 'migrations'),
-  });
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await migrate(db, {
+        migrationsFolder: path.join(__dirname, '..', 'db', 'migrations'),
+      });
+      break;
+    } catch (err) {
+      if (attempt === 3) throw err;
+      console.log(`[E2E] Migration attempt ${attempt} failed, retrying in 2s…`);
+      await new Promise((r) => setTimeout(r, 2_000));
+    }
+  }
 
   // Seed test data
   await seedTestData(db);
 
   await pool.end();
 
-  // Expose connection strings to worker processes
+  // Write connection strings to a temp file so worker processes can read them
+  // (env var changes in globalSetup may not reliably propagate to forked workers
+  // after setupFiles overwrite them)
+  writeFileSync(E2E_CONFIG_FILE, JSON.stringify({ dbUrl, redisUrl }), 'utf8');
+
+  // Also set in main process env as a best-effort fallback
   process.env['E2E_DATABASE_URL'] = dbUrl;
   process.env['E2E_REDIS_URL'] = redisUrl;
   process.env['DATABASE_URL'] = dbUrl;
@@ -77,13 +100,17 @@ export const TEST_ADMIN_ID = '00000000-0000-7000-8000-000000000002';
 export const TEST_WORKSPACE_ID = '00000000-0000-7000-8000-000000000003';
 export const TEST_PROJECT_ID = '00000000-0000-7000-8000-000000000004';
 export const TEST_WORKFLOW_STATUS_ID = '00000000-0000-7000-8000-000000000005';
+export const TEST_VIEWER_ID = '00000000-0000-7000-8000-000000000006';
 export const TEST_ADMIN_EMAIL = 'admin@e2e.test';
 export const TEST_ADMIN_PASSWORD = 'Admin@Test2026!';
+export const TEST_VIEWER_EMAIL = 'viewer@e2e.test';
+export const TEST_VIEWER_PASSWORD = 'Viewer@Test2026!';
 
 async function seedTestData(db: ReturnType<typeof drizzle>): Promise<void> {
-  const passwordHash = await argon2.hash(TEST_ADMIN_PASSWORD, {
-    type: argon2.argon2id,
-  });
+  const [adminHash, viewerHash] = await Promise.all([
+    argon2.hash(TEST_ADMIN_PASSWORD, { type: argon2.argon2id }),
+    argon2.hash(TEST_VIEWER_PASSWORD, { type: argon2.argon2id }),
+  ]);
 
   await db
     .insert(schema.tenants)
@@ -108,25 +135,36 @@ async function seedTestData(db: ReturnType<typeof drizzle>): Promise<void> {
 
   await db
     .insert(schema.users)
-    .values({
-      id: TEST_ADMIN_ID,
-      tenantId: TEST_TENANT_ID,
-      email: TEST_ADMIN_EMAIL,
-      displayName: 'E2E Admin',
-      emailVerified: true,
-      locale: 'en',
-      timezone: 'UTC',
-      passwordHash,
-    })
+    .values([
+      {
+        id: TEST_ADMIN_ID,
+        tenantId: TEST_TENANT_ID,
+        email: TEST_ADMIN_EMAIL,
+        displayName: 'E2E Admin',
+        emailVerified: true,
+        locale: 'en',
+        timezone: 'UTC',
+        passwordHash: adminHash,
+      },
+      {
+        id: TEST_VIEWER_ID,
+        tenantId: TEST_TENANT_ID,
+        email: TEST_VIEWER_EMAIL,
+        displayName: 'E2E Viewer',
+        emailVerified: true,
+        locale: 'en',
+        timezone: 'UTC',
+        passwordHash: viewerHash,
+      },
+    ])
     .onConflictDoNothing();
 
   await db
     .insert(schema.workspaceMembers)
-    .values({
-      tenantId: TEST_TENANT_ID,
-      workspaceId: TEST_WORKSPACE_ID,
-      userId: TEST_ADMIN_ID,
-    })
+    .values([
+      { tenantId: TEST_TENANT_ID, workspaceId: TEST_WORKSPACE_ID, userId: TEST_ADMIN_ID },
+      { tenantId: TEST_TENANT_ID, workspaceId: TEST_WORKSPACE_ID, userId: TEST_VIEWER_ID },
+    ])
     .onConflictDoNothing();
 
   // Seed project for work-item E2E tests
@@ -142,6 +180,12 @@ async function seedTestData(db: ReturnType<typeof drizzle>): Promise<void> {
     })
     .onConflictDoNothing();
 
+  // Seed project_counter so work-item key generation works (generateItemKey calls incrementCounter)
+  await db
+    .insert(schema.projectCounters)
+    .values({ projectId: TEST_PROJECT_ID, tenantId: TEST_TENANT_ID, lastItemNumber: 0 })
+    .onConflictDoNothing();
+
   // Seed a workflow status so work items can be created
   await db
     .insert(schema.workflowStatuses)
@@ -150,8 +194,84 @@ async function seedTestData(db: ReturnType<typeof drizzle>): Promise<void> {
       tenantId: TEST_TENANT_ID,
       projectId: TEST_PROJECT_ID,
       name: 'To Do',
-      category: 'todo',
+      category: 'to_do',
       position: 0,
     })
     .onConflictDoNothing();
+
+  // ── Seed system roles and assign to test users ────────────────────────────
+  const adminRoleId = uuidv7();
+  const viewerRoleId = uuidv7();
+
+  await db
+    .insert(schema.systemRoles)
+    .values([
+      {
+        id: adminRoleId,
+        tenantId: TEST_TENANT_ID,
+        name: 'Workspace Admin',
+        slug: 'workspace_admin_e2e',
+        isSystem: true,
+        permissions: [
+          'workspace:*',
+          'project:view',
+          'project:create',
+          'project:edit',
+          'project:archive',
+          'project:restore',
+          'project:delete',
+          'work_item:create',
+          'work_item:edit',
+          'work_item:delete',
+          'work_item:view',
+        ],
+      },
+      {
+        id: viewerRoleId,
+        tenantId: TEST_TENANT_ID,
+        name: 'Project Viewer',
+        slug: 'project_viewer_e2e',
+        isSystem: true,
+        permissions: ['work_item:view'],
+      },
+    ])
+    .onConflictDoNothing();
+
+  // Verify roles were inserted (handle conflict-do-nothing edge case)
+  const [adminRole] = await db
+    .select({ id: schema.systemRoles.id })
+    .from(schema.systemRoles)
+    .where(eq(schema.systemRoles.slug, 'workspace_admin_e2e'))
+    .limit(1);
+  const [viewerRole] = await db
+    .select({ id: schema.systemRoles.id })
+    .from(schema.systemRoles)
+    .where(eq(schema.systemRoles.slug, 'project_viewer_e2e'))
+    .limit(1);
+
+  if (adminRole && viewerRole) {
+    await db
+      .insert(schema.userRoleAssignments)
+      .values([
+        {
+          id: uuidv7(),
+          tenantId: TEST_TENANT_ID,
+          userId: TEST_ADMIN_ID,
+          roleId: adminRole.id,
+          scopeType: 'workspace' as const,
+          scopeId: TEST_WORKSPACE_ID,
+          grantedBy: TEST_ADMIN_ID,
+        },
+        {
+          id: uuidv7(),
+          tenantId: TEST_TENANT_ID,
+          userId: TEST_VIEWER_ID,
+          roleId: viewerRole.id,
+          scopeType: 'workspace' as const,
+          scopeId: TEST_WORKSPACE_ID,
+          grantedBy: TEST_ADMIN_ID,
+        },
+      ])
+      .onConflictDoNothing();
+  }
 }

@@ -2,6 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { WorkItemsService } from './work-items.service';
 import { WORK_ITEM_REPOSITORY } from '../domain/ports/work-item.repository';
 import { ACTIVITY_LOG_REPOSITORY } from '../domain/ports/activity-log.repository';
+import { TIME_LOG_REPOSITORY } from '../domain/ports/time-log.repository';
+import { WATCHER_REPOSITORY } from '../domain/ports/watcher.repository';
+import { ATTACHMENT_REPOSITORY } from '../domain/ports/attachment.repository';
+import { StorageService } from '@platform';
 import type { WorkItem } from '../domain/work-item.types';
 import { NotFoundException, PreconditionFailedException, UnitOfWork } from '@platform';
 import { ProjectsService } from '@modules/projects';
@@ -105,6 +109,43 @@ const makeProjectsService = () => ({
   assertTransitionAllowed: vi.fn().mockResolvedValue(undefined),
   generateItemKey: vi.fn().mockResolvedValue('PROJ-42'),
   listProjectTeams: vi.fn().mockResolvedValue([]),
+  // P1-15: scope validation helpers
+  assertWorkspaceMember: vi.fn().mockResolvedValue(undefined),
+  assertLabelBelongsToProject: vi.fn().mockResolvedValue(undefined),
+});
+
+const makeTimeLogRepo = () => ({
+  findById: vi.fn(),
+  listByWorkItem: vi.fn(),
+  create: vi.fn(),
+  update: vi.fn(),
+  softDelete: vi.fn().mockResolvedValue(undefined),
+});
+
+const makeWatcherRepo = () => ({
+  listByWorkItem: vi.fn(),
+  isWatching: vi.fn(),
+  watch: vi.fn().mockResolvedValue(undefined),
+  unwatch: vi.fn().mockResolvedValue(undefined),
+  watchMany: vi.fn().mockResolvedValue(undefined),
+  listUserIds: vi.fn(),
+});
+
+const makeAttachmentRepo = () => ({
+  findById: vi.fn(),
+  listByWorkItem: vi.fn(),
+  countByWorkItem: vi.fn().mockResolvedValue(0),
+  create: vi.fn(),
+  confirm: vi.fn(),
+  softDelete: vi.fn().mockResolvedValue(undefined),
+});
+
+const makeStorageService = () => ({
+  presignPut: vi.fn().mockResolvedValue({ uploadUrl: 'https://s3.example.com/upload' }),
+  presignGet: vi.fn().mockResolvedValue('https://s3.example.com/download'),
+  headObject: vi.fn().mockResolvedValue({ contentLength: 1024 }),
+  deleteObject: vi.fn().mockResolvedValue(undefined),
+  cdnUrl: vi.fn().mockReturnValue(null),
 });
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -115,18 +156,30 @@ describe('WorkItemsService', () => {
   let activityRepo: ReturnType<typeof makeActivityRepo>;
   let projectsService: ReturnType<typeof makeProjectsService>;
   let uow: ReturnType<typeof makeUnitOfWork>;
+  let timeLogRepo: ReturnType<typeof makeTimeLogRepo>;
+  let watcherRepo: ReturnType<typeof makeWatcherRepo>;
+  let attachmentRepo: ReturnType<typeof makeAttachmentRepo>;
+  let storageService: ReturnType<typeof makeStorageService>;
 
   beforeEach(async () => {
     workItemRepo = makeWorkItemRepo();
     activityRepo = makeActivityRepo();
     projectsService = makeProjectsService();
     uow = makeUnitOfWork();
+    timeLogRepo = makeTimeLogRepo();
+    watcherRepo = makeWatcherRepo();
+    attachmentRepo = makeAttachmentRepo();
+    storageService = makeStorageService();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WorkItemsService,
         { provide: WORK_ITEM_REPOSITORY, useValue: workItemRepo },
         { provide: ACTIVITY_LOG_REPOSITORY, useValue: activityRepo },
+        { provide: TIME_LOG_REPOSITORY, useValue: timeLogRepo },
+        { provide: WATCHER_REPOSITORY, useValue: watcherRepo },
+        { provide: ATTACHMENT_REPOSITORY, useValue: attachmentRepo },
+        { provide: StorageService, useValue: storageService },
         { provide: ProjectsService, useValue: projectsService },
         { provide: UnitOfWork, useValue: uow },
       ],
@@ -354,9 +407,53 @@ describe('WorkItemsService', () => {
       expect(workItemRepo.addLabel).toHaveBeenCalledWith('wi-1', 'l1');
     });
 
+    it('addLabelToWorkItem validates label belongs to project (P1-15)', async () => {
+      projectsService.assertLabelBelongsToProject.mockRejectedValueOnce(
+        new Error('LABEL_NOT_IN_PROJECT'),
+      );
+      await expect(service.addLabelToWorkItem('tenant-1', 'wi-1', 'bad-label')).rejects.toThrow(
+        'LABEL_NOT_IN_PROJECT',
+      );
+    });
+
     it('removeLabelFromWorkItem removes label', async () => {
       await service.removeLabelFromWorkItem('tenant-1', 'wi-1', 'l1');
       expect(workItemRepo.removeLabel).toHaveBeenCalledWith('wi-1', 'l1');
+    });
+  });
+
+  // ── P1-15 scope validation ────────────────────────────────────────────────
+
+  describe('P1-15 scope validation', () => {
+    it('createWorkItem validates assignee is workspace member', async () => {
+      projectsService.assertWorkspaceMember.mockRejectedValueOnce(
+        new Error('ASSIGNEE_NOT_MEMBER'),
+      );
+      await expect(
+        service.createWorkItem(mockActor, 'proj-1', 'story', 'Story', {
+          assigneeId: 'not-a-member',
+        }),
+      ).rejects.toThrow('ASSIGNEE_NOT_MEMBER');
+    });
+
+    it('updateWorkItem validates new assignee is workspace member', async () => {
+      workItemRepo.findById.mockResolvedValue(mockWorkItem());
+      projectsService.assertWorkspaceMember.mockRejectedValueOnce(
+        new Error('ASSIGNEE_NOT_MEMBER'),
+      );
+      await expect(
+        service.updateWorkItem(mockActor, 'wi-1', { assigneeId: 'outsider' }),
+      ).rejects.toThrow('ASSIGNEE_NOT_MEMBER');
+    });
+
+    it('createWorkItem validates parentId belongs to same project', async () => {
+      workItemRepo.findById
+        .mockResolvedValueOnce(null) // first call: parent not found
+      await expect(
+        service.createWorkItem(mockActor, 'proj-1', 'story', 'Story', {
+          parentId: 'bad-parent',
+        }),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

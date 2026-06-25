@@ -32,8 +32,8 @@ describe('Workspace (e2e)', () => {
       const res = await http.get('/v1/workspaces').set('Authorization', `Bearer ${accessToken}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.items).toBeInstanceOf(Array);
-      expect(res.body.items.length).toBeGreaterThan(0);
+      expect(res.body.data).toBeInstanceOf(Array);
+      expect(res.body.data.length).toBeGreaterThan(0);
     });
 
     it('returns 401 without auth token', async () => {
@@ -121,8 +121,8 @@ describe('Workspace (e2e)', () => {
         .set('Authorization', `Bearer ${accessToken}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.items).toBeInstanceOf(Array);
-      expect(res.body.items.length).toBeGreaterThan(0);
+      expect(res.body.data).toBeInstanceOf(Array);
+      expect(res.body.data.length).toBeGreaterThan(0);
     });
   });
 });

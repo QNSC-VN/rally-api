@@ -14,6 +14,12 @@ export interface JwtPayload {
   aud: string | string[];
   iat: number;
   exp: number;
+  /**
+   * Effective permission codes for this user, embedded at token-mint time.
+   * Refreshed on every token rotation so stale permissions are bounded by
+   * the access-token TTL (default 15 min).
+   */
+  permissions: string[];
 }
 
 @Injectable()

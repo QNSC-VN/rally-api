@@ -53,6 +53,7 @@ export const EnvSchema = z.object({
   SQS_REPORTING_URL: z.string().optional(),
   SQS_SEARCH_URL: z.string().optional(),
   S3_ATTACHMENTS_BUCKET: z.string().default('rally-attachments'),
+  CDN_ATTACHMENTS_BASE_URL: z.string().url().optional(),
 
   // ── Email ──────────────────────────────────────────────────────────────────
   /**
@@ -100,6 +101,17 @@ export const EnvSchema = z.object({
   PASSWORD_RESET_TOKEN_TTL_HOURS: z.coerce.number().int().positive().default(1),
   INVITATION_TTL_DAYS: z.coerce.number().int().positive().default(7),
   SESSION_CLEANUP_OLDER_THAN_DAYS: z.coerce.number().int().positive().default(7),
+
+  // SSO — Microsoft Entra ID (Azure AD) OpenID Connect
+  // When both vars are set, the /v1/auth/sso endpoint becomes active.
+  // Leave unset (default) to disable SSO and use email/password only.
+  ENTRA_TENANT_ID: z.string().optional(),
+  ENTRA_CLIENT_ID: z.string().optional(),
+  /**
+   * Rally tenant UUID to use for JIT-provisioned SSO users whose email doesn't
+   * match any existing Rally user. Required for SSO in fresh/greenfield installs.
+   */
+  ENTRA_DEFAULT_TENANT_ID: z.string().uuid().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;

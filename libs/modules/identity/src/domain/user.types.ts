@@ -52,3 +52,21 @@ export interface PasswordResetToken {
   usedAt: Date | null;
   createdAt: Date;
 }
+
+export interface SsoIdentity {
+  id: string;
+  tenantId: string;
+  userId: string;
+  provider: string;
+  providerSub: string;
+  providerEmail: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateUserInput {
+  tenantId: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string;
+}

@@ -3,20 +3,45 @@
  * Provides the minimum environment variables to satisfy AppConfigModule's
  * Zod validation so the NestJS module tree can be loaded without a real .env.
  */
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 // Ed25519 key pair (test-only — never used for production signing)
 const TEST_PRIVATE_KEY = `-----BEGIN PRIVATE KEY-----
-MC4CAQAwBQYDK2VdBCIEIBSJkYHQlqDKH4oPkMNdTQUbxv3J3Y5uO6qCc2N+TLOM
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgGgNdxreynQibKpNR
+ssO/UZdofFbaVXKeY4eCIHCy7TGhRANCAARYH16jRo1eyvlUy8tjTzPMUFzZUvQy
+T30XTMmh3R0SmEQflkr8aZ850TuN0oPLMU9oktLlDpZD+Gr7TGvuSc8/
 -----END PRIVATE KEY-----`;
 
 const TEST_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VdAyEAMNRQ3BqfMpDXBqPEkIjPv2FW9r5R9c3N5t6lFHfr3ZA=
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWB9eo0aNXsr5VMvLY08zzFBc2VL0
+Mk99F0zJod0dEphEH5ZK/GmfOdE7jdKDyzFPaJLS5Q6WQ/hq+0xr7knPPw==
 -----END PUBLIC KEY-----`;
+
+// For E2E tests: read container URLs written by globalSetup.
+// Must happen here (before test file imports) so ConfigModule.forRoot()
+// sees the correct DATABASE_URL when AppModule is first imported.
+const E2E_CONFIG_FILE = join(tmpdir(), 'rally-e2e-config.json');
+let e2eDbUrl = 'postgresql://test:test@localhost:5432/test';
+let e2eRedisUrl = 'redis://localhost:6379';
+if (existsSync(E2E_CONFIG_FILE)) {
+  try {
+    const cfg = JSON.parse(readFileSync(E2E_CONFIG_FILE, 'utf8')) as {
+      dbUrl: string;
+      redisUrl: string;
+    };
+    e2eDbUrl = cfg.dbUrl;
+    e2eRedisUrl = cfg.redisUrl;
+  } catch {
+    // ignore parse errors — fall back to unit-test defaults
+  }
+}
 
 Object.assign(process.env, {
   NODE_ENV: 'test',
-  DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
-  REDIS_URL: 'redis://localhost:6379',
+  DATABASE_URL: e2eDbUrl,
+  REDIS_URL: e2eRedisUrl,
   REDIS_KEY_PREFIX: 'test:',
   JWT_PRIVATE_KEY: TEST_PRIVATE_KEY,
   JWT_PUBLIC_KEY: TEST_PUBLIC_KEY,
@@ -28,7 +53,7 @@ Object.assign(process.env, {
   CSRF_SECRET: 'test-csrf-secret-32-chars-minimum!!',
   PASSWORD_RESET_TOKEN_TTL_HOURS: '2',
   INVITATION_TTL_DAYS: '7',
-  LOG_LEVEL: 'silent',
+  LOG_LEVEL: 'error',
   OTEL_ENABLED: 'false',
   OTEL_SERVICE_NAME: 'rally-api-test',
   OTEL_WORKER_SERVICE_NAME: 'rally-worker-test',

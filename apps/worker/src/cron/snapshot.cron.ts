@@ -16,7 +16,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { and, eq, isNull } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
-import { InjectDrizzle } from '@platform';
+import { InjectDrizzle, ValkeyService } from '@platform';
 import type { DrizzleDB } from '@platform';
 import { ReportingService } from '@modules/reporting';
 import { sprints, workItems, workflowStatuses } from '../../../../db/schema/work';
@@ -24,26 +24,27 @@ import { sprints, workItems, workflowStatuses } from '../../../../db/schema/work
 @Injectable()
 export class SnapshotCronService {
   private readonly logger = new Logger(SnapshotCronService.name);
-  /** Prevents a second cron run from starting if the previous one is still running. */
-  private isRunning = false;
+  /** Lock TTL: 55 min — slightly less than the 1h cron interval. */
+  private readonly LOCK_TTL_MS = 55 * 60 * 1_000;
 
   constructor(
     @InjectDrizzle() private readonly db: DrizzleDB,
     private readonly reportingService: ReportingService,
+    private readonly valkey: ValkeyService,
   ) {}
 
   /** Runs at midnight UTC every day. */
   @Cron('0 0 * * *', { name: 'daily-sprint-snapshot', timeZone: 'UTC' })
   async takeDailySnapshots(): Promise<void> {
-    if (this.isRunning) {
-      this.logger.warn('Snapshot cron still running from previous tick — skipping');
+    const acquired = await this.valkey.acquireLock('cron:daily-snapshot', this.LOCK_TTL_MS);
+    if (!acquired) {
+      this.logger.warn('Snapshot cron lock held by another pod — skipping this tick');
       return;
     }
-    this.isRunning = true;
     try {
       await this.runSnapshots();
     } finally {
-      this.isRunning = false;
+      await this.valkey.releaseLock('cron:daily-snapshot');
     }
   }
 

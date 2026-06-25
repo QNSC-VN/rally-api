@@ -1,20 +1,19 @@
-import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PERMISSION_KEY } from './decorators';
+import type { JwtPayload } from './jwt.strategy';
 
 /**
- * Permission guard — RBAC + ABAC check.
- * Reads required permission code from @RequirePermission() decorator,
- * delegates to the access module's PermissionService.
+ * Permission guard — reads the required permission code from @RequirePermission()
+ * and verifies the caller's JWT claims (permissions[] embedded at mint time).
  *
- * The actual permission lookup is done by the injected IPermissionService
- * (port, implemented in libs/modules/access).
- *
- * TODO(phase1): inject IPermissionService and call
- *   check(userId, tenantId, requiredPermission, resource)
- * Until the access module is wired this guard LOGS the required permission
- * and allows the request through, so that routes decorated with
- * @RequirePermission() are not unconditionally blocked.
+ * Wildcard: a permission of 'workspace:*' grants all workspace-level actions.
  */
 @Injectable()
 export class PermissionGuard implements CanActivate {
@@ -28,15 +27,28 @@ export class PermissionGuard implements CanActivate {
       [context.getHandler(), context.getClass()],
     );
 
-    // No permission annotation → allow (auth is handled by JwtAuthGuard)
+    // No permission annotation on this endpoint → JWT auth is sufficient.
     if (!requiredPermission) return true;
 
-    // Access module not yet wired — log and allow through.
-    // Replace this block with a real IPermissionService call in Phase 1.
-    this.logger.warn(
-      { requiredPermission },
-      'PermissionGuard: access module not wired — allowing request (replace before GA)',
-    );
+    const request = context.switchToHttp().getRequest<{ user?: JwtPayload }>();
+    const user = request.user;
+
+    if (!user?.permissions?.length) {
+      this.logger.warn({ requiredPermission }, 'PermissionGuard: no permissions in JWT');
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
+    // Workspace wildcard grants everything.
+    if (user.permissions.includes('workspace:*')) return true;
+
+    if (!user.permissions.includes(requiredPermission)) {
+      this.logger.warn(
+        { userId: user.sub, requiredPermission },
+        'PermissionGuard: access denied',
+      );
+      throw new ForbiddenException('Insufficient permissions');
+    }
+
     return true;
   }
 }

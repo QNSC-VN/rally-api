@@ -1,7 +1,8 @@
 /**
  * work schema — projects, work_items, workflow_statuses, workflow_transitions,
  *               sprints, releases, project_counters, sprint_daily_snapshots,
- *               comments, attachments, custom_field_defs
+ *               comments, attachments, custom_field_defs,
+ *               time_logs, work_item_watchers
  * Canonical DDL: 05_Architecture/DATABASE_SCHEMA.md §9
  */
 import {
@@ -19,8 +20,13 @@ import {
   index,
   uniqueIndex,
   primaryKey,
+  customType,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
+
+// tsvector is not a built-in Drizzle column type — define it so the ORM can
+// reference the generated column in WHERE clauses (schema-level read-only).
+const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' });
 import {
   projectStatusEnum,
   projectMemberStatusEnum,
@@ -114,6 +120,9 @@ export const workItems = workSchema.table(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    // GENERATED ALWAYS AS (STORED) tsvector — maintained by migration 0012.
+    // Read-only from the application layer; updated by Postgres on every write.
+    searchVector: tsvector('search_vector'),
   },
   (t) => ({
     tenantIdx: index('ix_wi_tenant').on(t.tenantId),
@@ -138,6 +147,7 @@ export const workItems = workSchema.table(
     blockedIdx: index('ix_wi_blocked')
       .on(t.tenantId, t.isBlocked)
       .where(sql`is_blocked = true`),
+    ftsIdx: index('ix_wi_fts').on(t.searchVector).where(sql`deleted_at IS NULL`),
   }),
 );
 
@@ -291,6 +301,7 @@ export const attachments = workSchema.table(
     mimeType: varchar('mime_type', { length: 255 }).notNull(),
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
     storageKey: varchar('storage_key', { length: 1000 }).notNull(), // S3 object key
+    status: varchar('status', { length: 20 }).notNull().default('pending'), // 'pending' | 'completed'
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -454,5 +465,49 @@ export const activityLogs = workSchema.table(
     // Primary read path: history for one work item, newest first.
     workItemIdx: index('ix_activity_work_item').on(t.workItemId, t.createdAt),
     projectIdx: index('ix_activity_project').on(t.projectId),
+  }),
+);
+
+// ── time_logs ─────────────────────────────────────────────────────────────────
+// Per-user time entries against a work item (added in migration 0012).
+// actual_hours on work_items is kept in sync by the trg_sync_actual_hours trigger.
+
+export const timeLogs = workSchema.table(
+  'time_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    workItemId: uuid('work_item_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    loggedDate: date('logged_date').notNull(),
+    hours: numeric('hours', { precision: 6, scale: 2 }).notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => ({
+    tenantIdx: index('ix_tl_tenant').on(t.tenantId),
+    workItemIdx: index('ix_tl_work_item').on(t.workItemId).where(sql`deleted_at IS NULL`),
+    userIdx: index('ix_tl_user').on(t.userId, t.loggedDate),
+  }),
+);
+
+// ── work_item_watchers ────────────────────────────────────────────────────────
+// Follower/subscriber list for notification fan-out (added in migration 0012).
+// Composite primary key: one row per (workItem, user) pair.
+
+export const workItemWatchers = workSchema.table(
+  'work_item_watchers',
+  {
+    workItemId: uuid('work_item_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    tenantId: uuid('tenant_id').notNull(),
+    watchedAt: timestamp('watched_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.workItemId, t.userId] }),
+    userIdx: index('ix_wiw_user').on(t.userId),
+    tenantIdx: index('ix_wiw_tenant').on(t.tenantId),
   }),
 );

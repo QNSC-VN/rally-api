@@ -11,7 +11,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors, ApiPagedResponse, buildPageArgs } from '@platform';
+import { Auth, ApiCommonErrors, ApiPagedResponse, buildPageArgs, RequirePermission, UseIdempotency } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { WorkItemsService } from '../../application/work-items.service';
@@ -24,14 +24,26 @@ import {
   MoveWorkItemDto,
   ReorderWorkItemsDto,
   AddLabelDto,
+  CreateTimeLogDto,
+  UpdateTimeLogDto,
+  TimeLogQueryDto,
+  PresignAttachmentDto,
 } from './dto/work-item-request.dto';
 import {
   WorkItemResponseDto,
   TaskTotalsResponseDto,
   ActivityResponseDto,
+  TimeLogResponseDto,
+  WatcherResponseDto,
+  AttachmentResponseDto,
+  PresignAttachmentResponseDto,
+  DownloadUrlResponseDto,
 } from './dto/work-item-response.dto';
 import type { WorkItem } from '../../domain/work-item.types';
 import type { ActivityLog } from '../../domain/activity-log.types';
+import type { TimeLog } from '../../domain/time-log.types';
+import type { Watcher } from '../../domain/watcher.types';
+import type { Attachment } from '../../domain/attachment.types';
 
 // ── Mappers ─────────────────────────────────────────────────────────────────
 
@@ -88,7 +100,41 @@ function toActivityDto(a: ActivityLog): ActivityResponseDto {
   };
 }
 
+function toTimeLogDto(l: TimeLog): TimeLogResponseDto {
+  return {
+    id: l.id,
+    workItemId: l.workItemId,
+    userId: l.userId,
+    loggedDate: l.loggedDate,
+    hours: Number(l.hours),
+    description: l.description,
+    createdAt: l.createdAt.toISOString(),
+    updatedAt: l.updatedAt.toISOString(),
+  };
+}
+
+function toWatcherDto(w: Watcher): WatcherResponseDto {
+  return {
+    userId: w.userId,
+    watchedAt: w.watchedAt.toISOString(),
+  };
+}
+
 // ── Controller ────────────────────────────────────────────────────────────────
+
+
+function toAttachmentDto(a: Attachment): AttachmentResponseDto {
+  return {
+    id: a.id,
+    workItemId: a.workItemId,
+    uploadedBy: a.uploadedBy,
+    filename: a.filename,
+    mimeType: a.mimeType,
+    sizeBytes: Number(a.sizeBytes),
+    status: a.status,
+    createdAt: a.createdAt.toISOString(),
+  };
+}
 
 @ApiTags('work-items')
 @Controller('work-items')
@@ -159,6 +205,7 @@ export class WorkItemsController {
   // ── Create ─────────────────────────────────────────────────────────────────
 
   @Post()
+  @RequirePermission('work_item:create')
   @ApiOperation({ summary: 'Create a work item' })
   @ApiResponse({ status: 201, type: WorkItemResponseDto })
   @ApiCommonErrors(400, 401, 404, 409, 422)
@@ -210,6 +257,7 @@ export class WorkItemsController {
   // ── Update ─────────────────────────────────────────────────────────────────
 
   @Patch(':id')
+  @RequirePermission('work_item:edit')
   @ApiOperation({ summary: 'Update a work item' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, type: WorkItemResponseDto })
@@ -226,6 +274,7 @@ export class WorkItemsController {
   // ── Delete ─────────────────────────────────────────────────────────────────
 
   @Delete(':id')
+  @RequirePermission('work_item:delete')
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete a work item (soft delete)' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
@@ -241,6 +290,7 @@ export class WorkItemsController {
   // ── Move (board transition) ────────────────────────────────────────────────
 
   @Patch(':id/move')
+  @RequirePermission('work_item:edit')
   @ApiOperation({ summary: 'Transition a work item to a new workflow status' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, type: WorkItemResponseDto })
@@ -257,6 +307,7 @@ export class WorkItemsController {
   // ── Reorder (backlog drag-and-drop) ───────────────────────────────────────
 
   @Patch('reorder')
+  @RequirePermission('work_item:edit')
   @HttpCode(204)
   @ApiOperation({ summary: 'Bulk update work item ranks for backlog reordering' })
   @ApiResponse({ status: 204, description: 'Work items reordered' })
@@ -296,6 +347,7 @@ export class WorkItemsController {
   }
 
   @Post(':id/tasks')
+  @RequirePermission('work_item:create')
   @ApiOperation({ summary: 'Create a child task under a work item' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 201, type: WorkItemResponseDto })
@@ -366,6 +418,7 @@ export class WorkItemsController {
   }
 
   @Post(':id/labels')
+  @RequirePermission('work_item:edit')
   @HttpCode(204)
   @ApiOperation({ summary: 'Add a label to a work item' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
@@ -380,6 +433,7 @@ export class WorkItemsController {
   }
 
   @Delete(':id/labels/:labelId')
+  @RequirePermission('work_item:edit')
   @HttpCode(204)
   @ApiOperation({ summary: 'Remove a label from a work item' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
@@ -393,4 +447,195 @@ export class WorkItemsController {
   ): Promise<void> {
     await this.workItemsService.removeLabelFromWorkItem(user.tenantId, id, labelId);
   }
+
+  // ── Time Logs ───────────────────────────────────────────────────────────────
+
+  @Get(':id/time-logs')
+  @ApiOperation({ summary: 'List time log entries for a work item' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: TimeLogResponseDto, isArray: true })
+  @ApiCommonErrors(401, 404)
+  async listTimeLogs(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: TimeLogQueryDto,
+  ): Promise<{ items: TimeLogResponseDto[]; total: number }> {
+    const result = await this.workItemsService.listTimeLogs(user.tenantId, id, {
+      page: query.page,
+      pageSize: query.pageSize,
+    });
+    return { items: result.items.map(toTimeLogDto), total: result.total };
+  }
+
+  @Post(':id/time-logs')
+  @UseIdempotency()
+  @ApiOperation({ summary: 'Log hours against a work item' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, type: TimeLogResponseDto })
+  @ApiCommonErrors(400, 401, 404, 422)
+  async logTime(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateTimeLogDto,
+  ): Promise<TimeLogResponseDto> {
+    const log = await this.workItemsService.logTime(user, id, {
+      loggedDate: dto.loggedDate,
+      hours: dto.hours as string,
+      description: dto.description,
+    });
+    return toTimeLogDto(log);
+  }
+
+  @Patch(':id/time-logs/:logId')
+  @ApiOperation({ summary: 'Edit a time log entry (owner only)' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'logId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: TimeLogResponseDto })
+  @ApiCommonErrors(400, 401, 403, 404, 422)
+  async updateTimeLog(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('logId', ParseUUIDPipe) logId: string,
+    @Body() dto: UpdateTimeLogDto,
+  ): Promise<TimeLogResponseDto> {
+    const log = await this.workItemsService.updateTimeLog(user, id, logId, {
+      loggedDate: dto.loggedDate,
+      hours: dto.hours as string | undefined,
+      description: dto.description,
+    });
+    return toTimeLogDto(log);
+  }
+
+  @Delete(':id/time-logs/:logId')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Delete a time log entry (owner or admin)' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'logId', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Time log deleted' })
+  @ApiCommonErrors(401, 403, 404)
+  async deleteTimeLog(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('logId', ParseUUIDPipe) logId: string,
+  ): Promise<void> {
+    await this.workItemsService.deleteTimeLog(user, id, logId);
+  }
+
+  // ── Watchers ────────────────────────────────────────────────────────────────
+
+  @Get(':id/watchers')
+  @ApiOperation({ summary: 'List watchers (followers) of a work item' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: WatcherResponseDto, isArray: true })
+  @ApiCommonErrors(401, 404)
+  async listWatchers(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<WatcherResponseDto[]> {
+    const watchers = await this.workItemsService.listWatchers(user.tenantId, id);
+    return watchers.map(toWatcherDto);
+  }
+
+  @Post(':id/watchers')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Watch (follow) a work item' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Now watching' })
+  @ApiCommonErrors(401, 404)
+  async watch(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.workItemsService.watch(user, id);
+  }
+
+  @Delete(':id/watchers')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Unwatch (unfollow) a work item' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'No longer watching' })
+  @ApiCommonErrors(401, 404)
+  async unwatch(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.workItemsService.unwatch(user, id);
+  }
+  // ── Attachments ──────────────────────────────────────────────────────────
+
+  @Post(':id/attachments/presign')
+  @ApiOperation({ summary: 'Get presigned S3 PUT URL to upload an attachment' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 201, type: PresignAttachmentResponseDto })
+  @ApiCommonErrors(400, 401, 404, 422)
+  async presignAttachment(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PresignAttachmentDto,
+  ): Promise<PresignAttachmentResponseDto> {
+    return this.workItemsService.presignAttachment(user, id, {
+      filename: dto.filename,
+      mimeType: dto.mimeType,
+      sizeBytes: dto.sizeBytes,
+    });
+  }
+
+  @Post(':id/attachments/:aid/confirm')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Confirm file upload completed — activates the attachment' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'aid', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: AttachmentResponseDto })
+  @ApiCommonErrors(400, 401, 404, 422)
+  async confirmAttachment(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('aid', ParseUUIDPipe) aid: string,
+  ): Promise<AttachmentResponseDto> {
+    const attachment = await this.workItemsService.confirmAttachment(user, id, aid);
+    return toAttachmentDto(attachment);
+  }
+
+  @Get(':id/attachments')
+  @ApiOperation({ summary: 'List completed attachments for a work item' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: AttachmentResponseDto, isArray: true })
+  @ApiCommonErrors(401, 404)
+  async listAttachments(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<AttachmentResponseDto[]> {
+    const items = await this.workItemsService.listAttachments(user.tenantId, id);
+    return items.map(toAttachmentDto);
+  }
+
+  @Get(':id/attachments/:aid/download')
+  @ApiOperation({ summary: 'Get a presigned S3 GET URL for downloading an attachment' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'aid', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: DownloadUrlResponseDto })
+  @ApiCommonErrors(401, 404)
+  async getAttachmentDownloadUrl(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('aid', ParseUUIDPipe) aid: string,
+  ): Promise<DownloadUrlResponseDto> {
+    return this.workItemsService.getAttachmentDownloadUrl(user.tenantId, id, aid);
+  }
+
+  @Delete(':id/attachments/:aid')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Delete an attachment (uploader or admin only)' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiParam({ name: 'aid', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Attachment deleted' })
+  @ApiCommonErrors(401, 403, 404)
+  async deleteAttachment(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('aid', ParseUUIDPipe) aid: string,
+  ): Promise<void> {
+    await this.workItemsService.deleteAttachment(user, id, aid);
+  }
 }
+

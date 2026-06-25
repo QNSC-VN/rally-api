@@ -35,14 +35,20 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     }
     if (!result) return false;
 
-    const req = context.switchToHttp().getRequest<{ user: { jti: string } }>();
+    const req = context.switchToHttp().getRequest<{ user: { jti: string; sub: string } }>();
     try {
-      if (await this.valkey.isTokenDenied(req.user.jti)) {
+      // Check both token-level (logout) and user-level (suspension/deactivation) denylist.
+      // Parallel lookups: saves ~1 RTT per authenticated request.
+      const [tokenRevoked, userRevoked] = await Promise.all([
+        this.valkey.isTokenDenied(req.user.jti),
+        this.valkey.isUserRevoked(req.user.sub),
+      ]);
+      if (tokenRevoked || userRevoked) {
         throw new UnauthorizedException('Token has been revoked');
       }
     } catch (err) {
       if (err instanceof UnauthorizedException) throw err;
-      // Token denylist is best-effort. If Valkey is unavailable we fail open so
+      // Denylist is best-effort. If Valkey is unavailable we fail open so
       // valid users aren't blocked — tokens still expire via their JWT exp claim.
       this.logger.warn({ err }, 'Token denylist check failed; failing open');
     }

@@ -114,7 +114,6 @@ export class TenancyService {
           tenantId: actor.tenantId,
           workspaceId: ws.id,
           userId: actor.sub,
-          roleId: 'admin',
         },
         tx,
       );

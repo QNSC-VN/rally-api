@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes } from 'node:crypto';
 import * as argon2 from 'argon2';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { uuidv7 } from 'uuidv7';
 import {
   AppConfigService,
@@ -16,6 +17,8 @@ import {
   parseDurationToSeconds,
 } from '@platform';
 import type { JwtPayload } from '@platform';
+import { AccessService } from '@modules/access';
+import { AuditService } from '@modules/audit';
 import { IUserRepository, USER_REPOSITORY } from '../domain/ports/user.repository';
 import {
   IAuthSessionRepository,
@@ -48,6 +51,8 @@ export class AuthService {
     private readonly config: AppConfigService,
     private readonly emailScheduler: EmailSchedulerService,
     private readonly rls: TenantRlsService,
+    private readonly accessService: AccessService,
+    private readonly audit: AuditService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -85,7 +90,8 @@ export class AuthService {
     }
 
     const sessionId = uuidv7();
-    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId);
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, user.tenantId);
+    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions);
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
 
     // AUTH-FR: rememberMe = 30d session; not remembered = 24h session
@@ -110,6 +116,18 @@ export class AuthService {
     });
 
     this.logger.log({ userId: user.id, jti, sessionId }, 'User logged in');
+
+    // Fire-and-forget audit trail (auth.login events are required for SOC 2 / ISO 27001)
+    void this.audit.record({
+      tenantId: user.tenantId,
+      actorId: user.id,
+      actorEmail: user.email,
+      action: 'auth.login',
+      resourceType: 'session',
+      resourceId: sessionId,
+      ipAddress,
+      metadata: { method: 'password' },
+    });
 
     return {
       accessToken,
@@ -146,6 +164,15 @@ export class AuthService {
         { sessionId: session.id, familyId: session.familyId },
         'Refresh token reuse detected — revoking entire family',
       );
+      // Audit trail for security incident detection (SOC 2 CC6.8)
+      void this.audit.record({
+        tenantId: session.tenantId,
+        actorId: session.userId,
+        action: 'auth.token_theft_detected',
+        resourceType: 'session',
+        resourceId: session.familyId,
+        metadata: { familyId: session.familyId },
+      });
       throw new UnauthorizedException('AUTH_REFRESH_TOKEN_REUSE', 'Refresh token has been revoked');
     }
 
@@ -161,7 +188,8 @@ export class AuthService {
 
     // Revoke old session and issue new tokens (rotation)
     const newSessionId = uuidv7();
-    const { accessToken, expiresIn } = this.signAccessToken(user, newSessionId);
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, user.tenantId);
+    const { accessToken, expiresIn } = this.signAccessToken(user, newSessionId, permissions);
     const { refreshToken: newRefreshToken, tokenHash: newHash } = this.generateRefreshToken();
 
     const refreshExpiry = new Date();
@@ -206,6 +234,145 @@ export class AuthService {
     ]);
 
     this.logger.log({ userId: payload.sub, jti: payload.jti }, 'User logged out');
+
+    void this.audit.record({
+      tenantId: payload.tenantId,
+      actorId: payload.sub,
+      action: 'auth.logout',
+      resourceType: 'session',
+      resourceId: payload.sessionId,
+      metadata: { jti: payload.jti },
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // SSO login — Microsoft Entra ID (OIDC)
+  // ---------------------------------------------------------------------------
+
+  @Span('auth.ssoLogin')
+  async ssoLogin(idToken: string, ipAddress?: string): Promise<LoginResult> {
+    const tenantId = this.config.get('ENTRA_TENANT_ID');
+    const clientId = this.config.get('ENTRA_CLIENT_ID');
+
+    if (!tenantId || !clientId) {
+      throw new UnauthorizedException('SSO_NOT_CONFIGURED', 'SSO is not configured on this server');
+    }
+
+    // Verify the Entra ID token signature and claims using Microsoft's JWKS
+    const JWKS = createRemoteJWKSet(
+      new URL(`https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`),
+    );
+
+    let claims: { sub?: unknown; oid?: unknown; email?: unknown; preferred_username?: unknown; upn?: unknown; name?: unknown; tid?: unknown };
+    try {
+      const result = await jwtVerify(idToken, JWKS, {
+        issuer: [
+          `https://login.microsoftonline.com/${tenantId}/v2.0`,
+          `https://sts.windows.net/${tenantId}/`,
+        ],
+        audience: clientId,
+      });
+      claims = result.payload as typeof claims;
+    } catch {
+      throw new UnauthorizedException('SSO_TOKEN_INVALID', 'Entra ID token is invalid or expired');
+    }
+
+    // Extract standard OIDC claims — Entra uses `oid` as the stable user ID
+    const oid = typeof claims.oid === 'string' ? claims.oid : null;
+    const email =
+      typeof claims.email === 'string'
+        ? claims.email
+        : typeof claims.preferred_username === 'string'
+          ? claims.preferred_username
+          : typeof claims.upn === 'string'
+            ? claims.upn
+            : null;
+    const displayName = typeof claims.name === 'string' ? claims.name : email ?? 'Unknown';
+
+    if (!oid || !email) {
+      throw new UnauthorizedException('SSO_CLAIMS_MISSING', 'Required OIDC claims (oid, email) are missing');
+    }
+
+    // Look up existing SSO identity first (fast path — avoids tenant lookup)
+    const existingIdentity = await this.userRepo.findSsoIdentity('entra', oid);
+
+    let user: User;
+    if (existingIdentity) {
+      const found = await this.userRepo.findById(existingIdentity.userId);
+      if (!found || found.deletedAt || found.status === 'suspended' || found.status === 'inactive') {
+        throw new UnauthorizedException('USER_DEACTIVATED', 'Account is not active');
+      }
+      user = found;
+    } else {
+      // Determine target tenant: match by email domain or use the first active tenant
+      // For JIT provisioning, we look for an existing user by email first; if none,
+      // we need a target tenantId. The SSO endpoint accepts an optional `tenantSlug`
+      // hint; here we fall back to email-based lookup across all tenants.
+      const emailUser = await this.userRepo.findByEmail(email.toLowerCase().trim());
+      if (emailUser) {
+        // Account merge: link Entra identity to existing email/password user
+        user = await this.userRepo.upsertBySsoIdentity(
+          'entra', oid, email, displayName, emailUser.tenantId,
+        );
+      } else {
+        // True JIT provision — requires a tenantId from the Entra tenant configuration.
+        // The `tid` claim in the Entra token is the Entra tenant ID (not Rally tenant).
+        // Operators must pre-configure a Rally tenant ID mapping via ENTRA_DEFAULT_TENANT_ID.
+        const defaultRallyTenantId = this.config.get('ENTRA_DEFAULT_TENANT_ID' as never) as string | undefined;
+        if (!defaultRallyTenantId) {
+          throw new UnauthorizedException(
+            'SSO_TENANT_NOT_FOUND',
+            'No Rally tenant found for this SSO identity. Please contact your administrator.',
+          );
+        }
+        user = await this.userRepo.upsertBySsoIdentity(
+          'entra', oid, email, displayName, defaultRallyTenantId,
+        );
+      }
+    }
+
+    const sessionId = uuidv7();
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, user.tenantId);
+    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions);
+    const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
+
+    const refreshExpiry = new Date();
+    refreshExpiry.setSeconds(refreshExpiry.getSeconds() + this.refreshTtlSeconds());
+
+    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+      await this.sessionRepo.create(
+        { id: sessionId, tenantId: user.tenantId, userId: user.id, tokenHash, familyId, ipAddress, expiresAt: refreshExpiry },
+        tx,
+      );
+      await this.userRepo.updateLastLogin(user.id, tx);
+    });
+
+    this.logger.log({ userId: user.id, jti, sessionId, provider: 'entra' }, 'User logged in via SSO');
+
+    void this.audit.record({
+      tenantId: user.tenantId,
+      actorId: user.id,
+      actorEmail: user.email,
+      action: 'auth.login.sso',
+      resourceType: 'session',
+      resourceId: sessionId,
+      ipAddress,
+      metadata: { provider: 'entra', oid },
+    });
+
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn,
+      user: {
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+        locale: user.locale,
+        timezone: user.timezone,
+      },
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -277,6 +444,7 @@ export class AuthService {
   private signAccessToken(
     user: User,
     sessionId: string,
+    permissions: string[],
   ): { accessToken: string; jti: string; expiresIn: number } {
     const jti = uuidv7();
     // Keep the client-facing expiresIn in lock-step with the JWT signing config
@@ -288,6 +456,7 @@ export class AuthService {
       tenantId: user.tenantId,
       sessionId,
       jti,
+      permissions,
     };
 
     const accessToken = this.jwt.sign(payload);

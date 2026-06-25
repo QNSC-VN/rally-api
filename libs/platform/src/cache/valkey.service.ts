@@ -71,4 +71,43 @@ export class ValkeyService implements OnModuleInit, OnModuleDestroy {
 
     return { allowed, remaining, resetAt };
   }
+
+  // ── User-level fast revocation ─────────────────────────────────────────────
+  //
+  // Used when an admin suspends / deactivates a user account. Sets a Redis key
+  // that the JWT guard checks on every request — active access tokens (up to
+  // 15 min lifetime) are immediately invalidated without waiting for expiry.
+
+  /**
+   * Fast-revoke ALL active access tokens for a user.
+   * TTL should match the longest possible access-token lifetime (JWT_ACCESS_EXPIRY).
+   */
+  async revokeUser(userId: string, ttlSeconds: number): Promise<void> {
+    await this.client.set(`denylist:user:${userId}`, '1', 'EX', ttlSeconds);
+  }
+
+  async isUserRevoked(userId: string): Promise<boolean> {
+    const val = await this.client.get(`denylist:user:${userId}`);
+    return val !== null;
+  }
+
+  // ── Distributed locks (Redlock-lite via SET NX PX) ───────────────────────────
+
+  /**
+   * Attempt to acquire a distributed lock.
+   * Returns true if the lock was acquired, false if already held by another holder.
+   * The lock auto-expires after ttlMs to prevent deadlocks on pod crash.
+   */
+  async acquireLock(key: string, ttlMs: number): Promise<boolean> {
+    const result = await this.client.set(`lock:${key}`, '1', 'PX', ttlMs, 'NX');
+    return result === 'OK';
+  }
+
+  /**
+   * Release a distributed lock.
+   * Safe to call even if the lock has already expired.
+   */
+  async releaseLock(key: string): Promise<void> {
+    await this.client.del(`lock:${key}`);
+  }
 }

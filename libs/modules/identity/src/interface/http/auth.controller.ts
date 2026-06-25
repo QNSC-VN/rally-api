@@ -19,6 +19,7 @@ import {
   UpdateProfileDto,
   ForgotPasswordDto,
   ResetPasswordDto,
+  SsoLoginDto,
 } from './dto/login.dto';
 import { AuthTokenResponseDto, UserProfileResponseDto } from './dto/auth-response.dto';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -27,8 +28,8 @@ const REFRESH_COOKIE = 'refresh_token';
 
 const COOKIE_BASE = {
   httpOnly: true,
-  sameSite: 'strict',
-  path: '/v1/auth/refresh',
+  sameSite: 'lax',
+  path: '/v1/auth',
 } as const;
 
 @ApiTags('auth')
@@ -61,6 +62,35 @@ export class AuthController {
       ...COOKIE_BASE,
       secure: process.env['NODE_ENV'] === 'production',
       maxAge: cookieMaxAge,
+    });
+
+    return {
+      accessToken: result.accessToken,
+      expiresIn: result.expiresIn,
+      user: result.user,
+    };
+  }
+
+  // ── POST /auth/sso ─────────────────────────────────────────────────────────
+
+  @Post('sso')
+  @Public()
+  @RateLimit('AUTH_LOGIN')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Authenticate with Microsoft Entra ID (SSO)' })
+  @ApiResponse({ status: 200, type: AuthTokenResponseDto })
+  @ApiCommonErrors(400, 401, 422)
+  async ssoLogin(
+    @Body() dto: SsoLoginDto,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<AuthTokenResponseDto> {
+    const result = await this.authService.ssoLogin(dto.idToken, req.ip);
+
+    reply.setCookie(REFRESH_COOKIE, result.refreshToken, {
+      ...COOKIE_BASE,
+      secure: process.env['NODE_ENV'] === 'production',
+      maxAge: 30 * 24 * 60 * 60,
     });
 
     return {

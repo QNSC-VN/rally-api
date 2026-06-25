@@ -82,6 +82,32 @@ export const authSessions = identitySchema.table(
 
 import { sql } from 'drizzle-orm';
 
+// ── sso_identities ───────────────────────────────────────────────────────────
+// Links an external SSO identity (e.g. Microsoft Entra) to a Rally user.
+// One user may have at most one identity per provider.
+
+export const ssoIdentities = identitySchema.table(
+  'sso_identities',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    /** Provider identifier — currently only 'entra' (Microsoft Entra ID). */
+    provider: varchar('provider', { length: 32 }).notNull(),
+    /** Stable subject ID from the provider (Entra: `oid` claim). */
+    providerSub: varchar('provider_sub', { length: 255 }).notNull(),
+    /** Email address from the provider token at the time of linking. */
+    providerEmail: varchar('provider_email', { length: 320 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // A single Entra OID maps to exactly one Rally user globally
+    providerSubIdx: uniqueIndex('uq_sso_identities_provider_sub').on(t.provider, t.providerSub),
+    userIdx: index('ix_sso_identities_user').on(t.userId),
+  }),
+);
+
 // ── password_reset_tokens ────────────────────────────────────────────────
 
 export const passwordResetTokens = identitySchema.table(

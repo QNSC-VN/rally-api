@@ -13,6 +13,8 @@ import {
   TenantRlsService,
 } from '@platform';
 import { ValkeyService } from '@platform';
+import { AccessService } from '@modules/access';
+import { AuditService } from '@modules/audit';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -105,6 +107,23 @@ const makeJwt = () => ({
   sign: vi.fn().mockReturnValue('mock-access-token'),
 });
 
+const makeAccessService = () => ({
+  getUserRoleAndPermissions: vi.fn().mockResolvedValue({
+    role: 'workspace_admin',
+    permissions: ['workspace:*'],
+  }),
+  hasPermission: vi.fn().mockResolvedValue(true),
+  listRoles: vi.fn().mockResolvedValue([]),
+  getUserAssignments: vi.fn().mockResolvedValue([]),
+  assignRole: vi.fn().mockResolvedValue(undefined),
+  revokeRole: vi.fn().mockResolvedValue(undefined),
+});
+
+const makeAuditService = () => ({
+  record: vi.fn().mockResolvedValue(undefined),
+  listAuditLogs: vi.fn().mockResolvedValue({ items: [], total: 0 }),
+});
+
 // ── Test setup ───────────────────────────────────────────────────────────────
 
 describe('AuthService', () => {
@@ -114,8 +133,10 @@ describe('AuthService', () => {
   let valkey: ReturnType<typeof makeValkey>;
   let config: ReturnType<typeof makeConfig>;
   let emailScheduler: ReturnType<typeof makeEmailScheduler>;
+  let auditService: ReturnType<typeof makeAuditService>;
   let rls: ReturnType<typeof makeRls>;
   let jwt: ReturnType<typeof makeJwt>;
+  let accessService: ReturnType<typeof makeAccessService>;
 
   beforeEach(async () => {
     userRepo = makeUserRepo();
@@ -125,6 +146,8 @@ describe('AuthService', () => {
     emailScheduler = makeEmailScheduler();
     rls = makeRls();
     jwt = makeJwt();
+    accessService = makeAccessService();
+    auditService = makeAuditService();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -136,6 +159,8 @@ describe('AuthService', () => {
         { provide: AppConfigService, useValue: config },
         { provide: EmailSchedulerService, useValue: emailScheduler },
         { provide: TenantRlsService, useValue: rls },
+        { provide: AccessService, useValue: accessService },
+        { provide: AuditService, useValue: auditService },
       ],
     }).compile();
 

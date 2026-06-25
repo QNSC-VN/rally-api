@@ -147,3 +147,47 @@ export const AddLabelSchema = z.object({
 });
 
 export class AddLabelDto extends createZodDto(AddLabelSchema) {}
+
+// ── Time log ──────────────────────────────────────────────────────────────────
+
+export const CreateTimeLogSchema = z.object({
+  loggedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
+  hours: z.coerce.number().positive().max(24).transform((v) => v.toFixed(2)),
+  description: z.string().max(2000).optional(),
+});
+
+export class CreateTimeLogDto extends createZodDto(CreateTimeLogSchema) {}
+
+export const UpdateTimeLogSchema = z.object({
+  loggedDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD')
+    .optional(),
+  hours: z.coerce
+    .number()
+    .positive()
+    .max(24)
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v.toFixed(2))),
+  description: z.string().max(2000).nullable().optional(),
+});
+
+export class UpdateTimeLogDto extends createZodDto(UpdateTimeLogSchema) {}
+
+export const TimeLogQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+export class TimeLogQueryDto extends createZodDto(TimeLogQuerySchema) {}
+
+// ── Attachment ────────────────────────────────────────────────────────────────
+
+export const PresignAttachmentSchema = z.object({
+  filename: z.string().min(1).max(500),
+  mimeType: z.string().min(1).max(255),
+  sizeBytes: z.number().int().positive().max(25 * 1024 * 1024),
+});
+
+export class PresignAttachmentDto extends createZodDto(PresignAttachmentSchema) {}
+

@@ -169,19 +169,21 @@ describe('Auth (e2e)', () => {
   // ── POST /v1/auth/forgot-password ────────────────────────────────────────
 
   describe('POST /v1/auth/forgot-password', () => {
-    it('returns 204 for known email (does not leak user existence)', async () => {
+    it('returns 200 for known email (does not leak user existence)', async () => {
       const res = await http.post('/v1/auth/forgot-password').send({ email: TEST_ADMIN_EMAIL });
 
-      // Service always returns 204 to prevent email enumeration
-      expect(res.status).toBe(204);
+      // Service always returns 200 + generic message to prevent email enumeration
+      expect(res.status).toBe(200);
+      expect(res.body.message).toBeDefined();
     });
 
-    it('returns 204 for unknown email', async () => {
+    it('returns 200 for unknown email', async () => {
       const res = await http
         .post('/v1/auth/forgot-password')
         .send({ email: 'nonexistent@nowhere.test' });
 
-      expect(res.status).toBe(204);
+      expect(res.status).toBe(200);
+      expect(res.body.message).toBeDefined();
     });
   });
 });
