@@ -127,6 +127,13 @@
       "when": 1782700000000,
       "tag": "0017_tenant_members",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1782800000000,
+      "tag": "0018_users_membership_rls",
+      "breakpoints": true
     }
   ]
 }

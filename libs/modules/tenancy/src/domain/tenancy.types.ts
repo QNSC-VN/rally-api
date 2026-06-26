@@ -176,3 +176,35 @@ export interface AutoJoinTarget {
   tenantId: string;
   workspaceId: string;
 }
+
+// ── Tenant membership (keycard) ───────────────────────────────────────────────
+
+export interface TenantMember {
+  id: string;
+  tenantId: string;
+  userId: string;
+  roleId: string | null;
+  status: 'active' | 'suspended' | 'removed';
+  lastActiveAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateTenantMemberInput {
+  id: string;
+  tenantId: string;
+  userId: string;
+  roleId?: string;
+}
+
+/**
+ * A user's membership in a tenant — the "keycard" — as returned at login time.
+ * Ordered most-recently-active first; the first entry is the auto-selected tenant.
+ */
+export interface TenantMembership {
+  tenantId: string;
+  tenantName: string;
+  tenantSlug: string;
+  /** ISO-8601 string, or null if the user has never explicitly logged into this tenant. */
+  lastActiveAt: string | null;
+}

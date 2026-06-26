@@ -417,6 +417,7 @@ export class InvitationController {
   constructor(private readonly tenancyService: TenancyService) {}
 
   @Post('accept')
+  @Auth()
   @HttpCode(204)
   @RateLimit('STRICT')
   @ApiOperation({ summary: 'Accept a workspace invitation (authenticated user only)' })

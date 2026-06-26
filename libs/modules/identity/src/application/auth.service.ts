@@ -20,6 +20,7 @@ import {
 import type { JwtPayload } from '@platform';
 import { AccessService } from '@modules/access';
 import { TenancyService } from '@modules/tenancy';
+import type { TenantMembership } from '@modules/tenancy';
 import { AuditService } from '@modules/audit';
 import { IUserRepository, USER_REPOSITORY } from '../domain/ports/user.repository';
 import {
@@ -37,6 +38,8 @@ export interface LoginResult {
   refreshToken: string;
   expiresIn: number;
   user: Pick<User, 'id' | 'email' | 'displayName' | 'avatarUrl' | 'locale' | 'timezone'>;
+  /** All active tenant memberships, most-recently-active first. Drives the tenant switcher. */
+  memberships: TenantMembership[];
 }
 
 export interface RefreshResult {
@@ -98,7 +101,12 @@ export class AuthService {
     }
 
     const sessionId = uuidv7();
-    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, user.tenantId);
+    // Load keycards — pick the most-recently-active tenant; fall back to users.tenant_id
+    // for existing users who existed before tenant_members was backfilled.
+    const memberships = await this.tenancyService.getMemberships(user.id);
+    const activeTenantId = memberships[0]?.tenantId ?? user.tenantId;
+
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, activeTenantId);
     const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions);
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
 
@@ -107,11 +115,11 @@ export class AuthService {
     const refreshExpiry = new Date();
     refreshExpiry.setSeconds(refreshExpiry.getSeconds() + ttlSeconds);
 
-    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+    await this.rls.withTenantContext(activeTenantId, async (tx) => {
       await this.sessionRepo.create(
         {
           id: sessionId,
-          tenantId: user.tenantId,
+          tenantId: activeTenantId,
           userId: user.id,
           tokenHash,
           familyId,
@@ -125,9 +133,10 @@ export class AuthService {
 
     this.logger.log({ userId: user.id, jti, sessionId }, 'User logged in');
 
-    // Fire-and-forget audit trail (auth.login events are required for SOC 2 / ISO 27001)
+    // Fire-and-forget: touch last-active for the tenant switcher + audit trail
+    void this.tenancyService.touchTenantMembership(user.id, activeTenantId);
     void this.audit.record({
-      tenantId: user.tenantId,
+      tenantId: activeTenantId,
       actorId: user.id,
       actorEmail: user.email,
       action: 'auth.login',
@@ -149,6 +158,7 @@ export class AuthService {
         locale: user.locale,
         timezone: user.timezone,
       },
+      memberships,
     };
   }
 
@@ -212,6 +222,7 @@ export class AuthService {
 
     // Issue a login session (mirrors login()).
     const sessionId = uuidv7();
+    const memberships = await this.tenancyService.getMemberships(user.id);
     const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, tenantId);
     const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions);
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
@@ -231,6 +242,7 @@ export class AuthService {
       'User signed up',
     );
 
+    void this.tenancyService.touchTenantMembership(user.id, tenantId);
     void this.audit.record({
       tenantId,
       actorId: user.id,
@@ -254,6 +266,7 @@ export class AuthService {
         locale: user.locale,
         timezone: user.timezone,
       },
+      memberships,
     };
   }
 
@@ -474,6 +487,9 @@ export class AuthService {
       metadata: { provider: 'entra', oid },
     });
 
+    const memberships = await this.tenancyService.getMemberships(user.id);
+    void this.tenancyService.touchTenantMembership(user.id, user.tenantId);
+
     return {
       accessToken,
       refreshToken,
@@ -486,6 +502,7 @@ export class AuthService {
         locale: user.locale,
         timezone: user.timezone,
       },
+      memberships,
     };
   }
 

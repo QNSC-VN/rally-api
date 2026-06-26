@@ -10,10 +10,19 @@ const UserProfileSchema = z.object({
   timezone: z.string(),
 });
 
+const TenantMembershipSchema = z.object({
+  tenantId: z.string(),
+  tenantName: z.string(),
+  tenantSlug: z.string(),
+  lastActiveAt: z.string().nullable(),
+});
+
 export const AuthTokenResponseSchema = z.object({
   accessToken: z.string(),
   expiresIn: z.number().describe('Seconds until access token expires'),
   user: UserProfileSchema,
+  /** All active tenant memberships, most-recently-active first. Drives the tenant switcher. */
+  memberships: z.array(TenantMembershipSchema),
 });
 
 export class AuthTokenResponseDto extends createZodDto(AuthTokenResponseSchema) {}

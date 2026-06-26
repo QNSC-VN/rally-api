@@ -32,6 +32,10 @@ import {
   ITenantDomainRepository,
   TENANT_DOMAIN_REPOSITORY,
 } from '../domain/ports/tenant-domain.repository';
+import {
+  ITenantMemberRepository,
+  TENANT_MEMBER_REPOSITORY,
+} from '../domain/ports/tenant-member.repository';
 import type {
   Tenant,
   Workspace,
@@ -44,6 +48,7 @@ import type {
   UpdateWorkspaceSettingsInput,
   ProvisionedTenant,
   AutoJoinTarget,
+  TenantMembership,
 } from '../domain/tenancy.types';
 
 @Injectable()
@@ -60,6 +65,8 @@ export class TenancyService {
     private readonly settingsRepo: IWorkspaceSettingsRepository,
     @Inject(TENANT_DOMAIN_REPOSITORY)
     private readonly tenantDomainRepo: ITenantDomainRepository,
+    @Inject(TENANT_MEMBER_REPOSITORY)
+    private readonly tenantMemberRepo: ITenantMemberRepository,
     private readonly config: AppConfigService,
     private readonly emailScheduler: EmailSchedulerService,
     private readonly uow: UnitOfWork,
@@ -131,7 +138,26 @@ export class TenancyService {
     userId: string,
     roleId?: string,
   ): Promise<void> {
+    // Ensure the tenant-level keycard exists first (idempotent — safe to call
+    // even if provisionTenant already inserted one for the founding user).
+    await this.tenantMemberRepo.create({ id: uuidv7(), tenantId, userId });
     await this.memberRepo.addMember({ id: uuidv7(), tenantId, workspaceId, userId, roleId });
+  }
+
+  /**
+   * Return all active tenant memberships for a user, most-recently-active first.
+   * Used at login to resolve the active tenant and populate the switcher list.
+   */
+  async getMemberships(userId: string): Promise<TenantMembership[]> {
+    return this.tenantMemberRepo.findByUserId(userId);
+  }
+
+  /**
+   * Stamp last_active_at on a user's keycard so that next login auto-selects
+   * the tenant they were most recently active in (Linear-style switcher).
+   */
+  async touchTenantMembership(userId: string, tenantId: string): Promise<void> {
+    await this.tenantMemberRepo.touchLastActive(userId, tenantId);
   }
 
   /** Slugify an org name into a URL-safe tenant slug fragment. */
@@ -463,6 +489,15 @@ export class TenancyService {
     // invitation be redeemed twice. Tenant context is the invitation's tenant,
     // which is the tenant of every row written here.
     await this.rls.withTenantContext(invitation.tenantId, async (tx) => {
+      // 1. Ensure the keycard exists — this is what fixes the "ghost member"
+      //    bug where a user from tenant A accepts an invite from tenant B.
+      //    Once this row exists, the updated RLS on identity.users lets tenant B
+      //    see their profile row through the membership-based policy.
+      await this.tenantMemberRepo.create(
+        { id: uuidv7(), tenantId: invitation.tenantId, userId: acceptingUserId },
+        tx,
+      );
+
       if (!existing) {
         await this.memberRepo.addMember(
           {

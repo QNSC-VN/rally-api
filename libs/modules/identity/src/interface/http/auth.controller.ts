@@ -97,6 +97,7 @@ export class AuthController {
       accessToken: result.accessToken,
       expiresIn: result.expiresIn,
       user: result.user,
+      memberships: result.memberships,
     };
   }
 
@@ -134,6 +135,7 @@ export class AuthController {
       accessToken: result.accessToken,
       expiresIn: result.expiresIn,
       user: result.user,
+      memberships: result.memberships,
     };
   }
 
@@ -163,6 +165,7 @@ export class AuthController {
       accessToken: result.accessToken,
       expiresIn: result.expiresIn,
       user: result.user,
+      memberships: result.memberships,
     };
   }
 
@@ -181,7 +184,7 @@ export class AuthController {
   async refresh(
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
-  ): Promise<Omit<AuthTokenResponseDto, 'user'>> {
+  ): Promise<Omit<AuthTokenResponseDto, 'user' | 'memberships'>> {
     const token =
       req.cookies && typeof req.cookies === 'object'
         ? (req.cookies as Record<string, string | undefined>)[REFRESH_COOKIE]
