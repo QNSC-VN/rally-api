@@ -33,6 +33,8 @@ export const UserProfileResponseSchema = UserProfileSchema.extend({
   emailVerified: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  /** All active tenant memberships, most-recently-active first. */
+  memberships: z.array(TenantMembershipSchema),
 });
 
 export class UserProfileResponseDto extends createZodDto(UserProfileResponseSchema) {}

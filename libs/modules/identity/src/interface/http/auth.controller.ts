@@ -13,6 +13,7 @@ import {
 import type { JwtPayload } from '@platform';
 import { AuthService } from '../../application/auth.service';
 import { AccessService } from '@modules/access';
+import { TenancyService } from '@modules/tenancy';
 import {
   LoginDto,
   SignupDto,
@@ -39,6 +40,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly accessService: AccessService,
+    private readonly tenancyService: TenancyService,
   ) {}
 
   private buildRefreshCookieOptions(req: FastifyRequest, maxAge: number) {
@@ -258,9 +260,10 @@ export class AuthController {
   @ApiResponse({ status: 200, type: UserProfileResponseDto })
   @ApiCommonErrors(401)
   async getMe(@CurrentUser() user: JwtPayload): Promise<UserProfileResponseDto> {
-    const [profile, { role, permissions }] = await Promise.all([
+    const [profile, { role, permissions }, memberships] = await Promise.all([
       this.authService.getMe(user.sub),
       this.accessService.getUserRoleAndPermissions(user.sub, user.tenantId),
+      this.tenancyService.getMemberships(user.sub),
     ]);
     return {
       id: profile.id,
@@ -274,6 +277,7 @@ export class AuthController {
       emailVerified: profile.emailVerified,
       createdAt: profile.createdAt.toISOString(),
       updatedAt: profile.updatedAt.toISOString(),
+      memberships,
     };
   }
 
@@ -288,9 +292,10 @@ export class AuthController {
     @CurrentUser() user: JwtPayload,
     @Body() dto: UpdateProfileDto,
   ): Promise<UserProfileResponseDto> {
-    const [profile, { role, permissions }] = await Promise.all([
+    const [profile, { role, permissions }, memberships] = await Promise.all([
       this.authService.updateProfile(user.sub, dto),
       this.accessService.getUserRoleAndPermissions(user.sub, user.tenantId),
+      this.tenancyService.getMemberships(user.sub),
     ]);
     return {
       id: profile.id,
@@ -304,6 +309,7 @@ export class AuthController {
       emailVerified: profile.emailVerified,
       createdAt: profile.createdAt.toISOString(),
       updatedAt: profile.updatedAt.toISOString(),
+      memberships,
     };
   }
 
