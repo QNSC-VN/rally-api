@@ -484,7 +484,8 @@ async function seed() {
     {
       slug: 'project_member',
       name: 'Project Member',
-      permissions: ['work_item:create', 'work_item:edit:own', 'work_item:view'],
+      // BA spec: Developer can update any work item (no "own-only" concept)
+      permissions: ['work_item:create', 'work_item:edit', 'work_item:view'],
     },
     { slug: 'project_viewer', name: 'Project Viewer', permissions: ['work_item:view'] },
     {
