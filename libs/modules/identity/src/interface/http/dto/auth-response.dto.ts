@@ -15,6 +15,10 @@ const TenantMembershipSchema = z.object({
   tenantName: z.string(),
   tenantSlug: z.string(),
   lastActiveAt: z.string().nullable(),
+  /** User's primary role slug in this tenant, e.g. 'workspace_admin'. */
+  roleSlug: z.string().nullable(),
+  /** Human-readable role label, e.g. 'Workspace Admin'. */
+  roleName: z.string().nullable(),
 });
 
 export const AuthTokenResponseSchema = z.object({

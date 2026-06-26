@@ -207,4 +207,8 @@ export interface TenantMembership {
   tenantSlug: string;
   /** ISO-8601 string, or null if the user has never explicitly logged into this tenant. */
   lastActiveAt: string | null;
+  /** The user's primary role slug in this tenant, e.g. 'workspace_admin'. Null when no assignment exists. */
+  roleSlug: string | null;
+  /** Human-readable role name, e.g. 'Workspace Admin'. */
+  roleName: string | null;
 }

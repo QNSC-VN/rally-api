@@ -26,6 +26,7 @@ import {
   PageQueryDto,
   UseIdempotency,
   RateLimit,
+  RequirePermission,
 } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity/interface/http/decorators/current-user.decorator';
@@ -201,6 +202,7 @@ export class WorkspaceController {
   // ── Update workspace ───────────────────────────────────────────────────────
 
   @Patch(':id')
+  @RequirePermission('workspace:*')
   @ApiOperation({ summary: 'Update workspace' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, type: WorkspaceResponseDto })
@@ -218,6 +220,7 @@ export class WorkspaceController {
   // MVP constraint: workspace archival is system-only (COMPANY-FR-010).
 
   @Delete(':id')
+  @RequirePermission('workspace:*')
   @ApiExcludeEndpoint()
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete workspace (soft delete)' })
@@ -267,6 +270,7 @@ export class WorkspaceController {
   // ── Add member ─────────────────────────────────────────────────────────────
 
   @Post(':id/members')
+  @RequirePermission('workspace:manage_members')
   @ApiOperation({ summary: 'Add a user to the workspace' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 201, type: MemberResponseDto })
@@ -283,6 +287,7 @@ export class WorkspaceController {
   // ── Update member ──────────────────────────────────────────────────────────
 
   @Patch(':id/members/:memberId')
+  @RequirePermission('workspace:manage_members')
   @ApiOperation({ summary: 'Update member role or status' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'memberId', type: 'string', format: 'uuid' })
@@ -307,6 +312,7 @@ export class WorkspaceController {
   // ── Remove member ──────────────────────────────────────────────────────────
 
   @Delete(':id/members/:userId')
+  @RequirePermission('workspace:manage_members')
   @HttpCode(204)
   @ApiOperation({ summary: 'Remove a user from the workspace' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
@@ -324,6 +330,7 @@ export class WorkspaceController {
   // ── Invite member ──────────────────────────────────────────────────────────
 
   @Post(':id/invitations')
+  @RequirePermission('workspace:manage_members')
   @UseIdempotency()
   @RateLimit('STRICT')
   @ApiOperation({ summary: 'Invite a user to the workspace by email' })
@@ -363,6 +370,7 @@ export class WorkspaceController {
   // ── Cancel invitation ──────────────────────────────────────────────────────
 
   @Delete(':id/invitations/:invitationId')
+  @RequirePermission('workspace:manage_members')
   @HttpCode(204)
   @ApiOperation({ summary: 'Cancel a pending workspace invitation' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
@@ -393,6 +401,7 @@ export class WorkspaceController {
   }
 
   @Patch(':id/settings')
+  @RequirePermission('workspace:*')
   @ApiOperation({ summary: 'Update workspace settings' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, type: WorkspaceSettingsResponseDto })

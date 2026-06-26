@@ -3,7 +3,12 @@ import { and, desc, eq } from 'drizzle-orm';
 import { InjectDrizzle } from '@platform';
 import type { DrizzleDB, DbExecutor } from '@platform';
 import { tenantMembers, tenants } from '../../../../../../db/schema/tenancy';
-import type { TenantMember, TenantMembership, CreateTenantMemberInput } from '../../domain/tenancy.types';
+import { userRoleAssignments, systemRoles } from '../../../../../../db/schema/access';
+import type {
+  TenantMember,
+  TenantMembership,
+  CreateTenantMemberInput,
+} from '../../domain/tenancy.types';
 import type { ITenantMemberRepository } from '../../domain/ports/tenant-member.repository';
 
 @Injectable()
@@ -17,9 +22,20 @@ export class TenantMemberDrizzleRepository implements ITenantMemberRepository {
         tenantName: tenants.name,
         tenantSlug: tenants.slug,
         lastActiveAt: tenantMembers.lastActiveAt,
+        roleSlug: systemRoles.slug,
+        roleName: systemRoles.name,
       })
       .from(tenantMembers)
       .innerJoin(tenants, eq(tenants.id, tenantMembers.tenantId))
+      .leftJoin(
+        userRoleAssignments,
+        and(
+          eq(userRoleAssignments.userId, tenantMembers.userId),
+          eq(userRoleAssignments.tenantId, tenantMembers.tenantId),
+          eq(userRoleAssignments.scopeType, 'workspace'),
+        ),
+      )
+      .leftJoin(systemRoles, eq(systemRoles.id, userRoleAssignments.roleId))
       .where(and(eq(tenantMembers.userId, userId), eq(tenantMembers.status, 'active')))
       .orderBy(desc(tenantMembers.lastActiveAt));
 
@@ -28,6 +44,8 @@ export class TenantMemberDrizzleRepository implements ITenantMemberRepository {
       tenantName: r.tenantName,
       tenantSlug: r.tenantSlug,
       lastActiveAt: r.lastActiveAt ? r.lastActiveAt.toISOString() : null,
+      roleSlug: r.roleSlug ?? null,
+      roleName: r.roleName ?? null,
     }));
   }
 
