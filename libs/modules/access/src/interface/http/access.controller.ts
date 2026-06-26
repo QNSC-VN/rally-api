@@ -9,7 +9,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors } from '@platform';
+import { Auth, ApiCommonErrors, RequirePermission } from '@platform';
 import type { JwtPayload } from '@platform';
 import { CurrentUser } from '@platform';
 import { AccessService } from '../../application/access.service';
@@ -76,9 +76,10 @@ export class AccessController {
   }
 
   @Post('role-assignments')
-  @ApiOperation({ summary: 'Assign a role to a user' })
+  @RequirePermission('workspace:manage_members')
+  @ApiOperation({ summary: 'Assign a role to a user (workspace admin only)' })
   @ApiResponse({ status: 201, type: RoleAssignmentResponseDto })
-  @ApiCommonErrors(400, 401, 404, 409, 422)
+  @ApiCommonErrors(400, 401, 403, 404, 409, 422)
   async assignRole(
     @CurrentUser() user: JwtPayload,
     @Body() dto: AssignRoleDto,
@@ -94,11 +95,12 @@ export class AccessController {
   }
 
   @Delete('role-assignments/:id')
+  @RequirePermission('workspace:manage_members')
   @HttpCode(204)
-  @ApiOperation({ summary: 'Revoke a role assignment' })
+  @ApiOperation({ summary: 'Revoke a role assignment (workspace admin only)' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 204, description: 'Role assignment revoked' })
-  @ApiCommonErrors(401, 404)
+  @ApiCommonErrors(401, 403, 404)
   async revokeRole(
     @CurrentUser() user: JwtPayload,
     @Param('id', ParseUUIDPipe) id: string,

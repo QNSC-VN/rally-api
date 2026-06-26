@@ -14,7 +14,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import { userStatusEnum } from './enums';
+import { userStatusEnum, ssoProviderEnum, ssoConnectionStatusEnum } from './enums';
 
 export const identitySchema = pgSchema('identity');
 
@@ -105,6 +105,50 @@ export const ssoIdentities = identitySchema.table(
     // A single Entra OID maps to exactly one Rally user globally
     providerSubIdx: uniqueIndex('uq_sso_identities_provider_sub').on(t.provider, t.providerSub),
     userIdx: index('ix_sso_identities_user').on(t.userId),
+  }),
+);
+
+// ── sso_connections ──────────────────────────────────────────────────────────
+// Maps an external identity provider (identified by its directory/tenant id or
+// issuer) to a single Rally tenant. This is the authoritative, enterprise-grade
+// mechanism for resolving which tenant a federated user belongs to — the same
+// model used by Okta/WorkOS/Rally: the IdP is the unit of trust, not the email.
+//
+// During SSO login the Entra `tid` claim is matched against `external_tenant_id`
+// to deterministically route the user into the correct tenant. Domain allow-list
+// and a JIT toggle give tenant admins control over auto-provisioning.
+
+export const ssoConnections = identitySchema.table(
+  'sso_connections',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Rally tenant this IdP connection provisions users into. */
+    tenantId: uuid('tenant_id').notNull(),
+    /** Default workspace JIT-provisioned users join. */
+    workspaceId: uuid('workspace_id').notNull(),
+    /** Federation protocol/provider. */
+    provider: ssoProviderEnum('provider').notNull().default('entra'),
+    /** IdP directory id — Entra `tid` claim (the primary match key). */
+    externalTenantId: varchar('external_tenant_id', { length: 255 }).notNull(),
+    /** Full token issuer URL — optional secondary match key (SAML/OIDC). */
+    issuer: varchar('issuer', { length: 512 }),
+    /** System-role slug assigned to JIT-provisioned users (e.g. 'project_member'). */
+    defaultRoleSlug: varchar('default_role_slug', { length: 64 }).notNull().default('project_member'),
+    /** Email domains permitted to provision via this connection. Empty = any. */
+    allowedEmailDomains: jsonb('allowed_email_domains').$type<string[]>().notNull().default([]),
+    /** When false, new users are NOT auto-created — they must be invited first. */
+    jitEnabled: boolean('jit_enabled').notNull().default(true),
+    status: ssoConnectionStatusEnum('status').notNull().default('active'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // One IdP directory maps to exactly one Rally tenant per provider.
+    providerExternalIdx: uniqueIndex('uq_sso_connections_provider_external').on(
+      t.provider,
+      t.externalTenantId,
+    ),
+    tenantIdx: index('ix_sso_connections_tenant').on(t.tenantId),
   }),
 );
 

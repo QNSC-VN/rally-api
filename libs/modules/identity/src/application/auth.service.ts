@@ -24,6 +24,10 @@ import {
   IAuthSessionRepository,
   AUTH_SESSION_REPOSITORY,
 } from '../domain/ports/auth-session.repository';
+import {
+  ISsoConnectionRepository,
+  SSO_CONNECTION_REPOSITORY,
+} from '../domain/ports/sso-connection.repository';
 import type { User } from '../domain/user.types';
 
 export interface LoginResult {
@@ -46,6 +50,7 @@ export class AuthService {
   constructor(
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     @Inject(AUTH_SESSION_REPOSITORY) private readonly sessionRepo: IAuthSessionRepository,
+    @Inject(SSO_CONNECTION_REPOSITORY) private readonly ssoConnectionRepo: ISsoConnectionRepository,
     private readonly jwt: JwtService,
     private readonly valkey: ValkeyService,
     private readonly config: AppConfigService,
@@ -288,10 +293,14 @@ export class AuthService {
             ? claims.upn
             : null;
     const displayName = typeof claims.name === 'string' ? claims.name : email ?? 'Unknown';
+    // Entra `tid` — the IdP directory id used to resolve the Rally tenant.
+    const externalTenantId = typeof claims.tid === 'string' ? claims.tid : null;
 
     if (!oid || !email) {
       throw new UnauthorizedException('SSO_CLAIMS_MISSING', 'Required OIDC claims (oid, email) are missing');
     }
+
+    const normalizedEmail = email.toLowerCase().trim();
 
     // Look up existing SSO identity first (fast path — avoids tenant lookup)
     const existingIdentity = await this.userRepo.findSsoIdentity('entra', oid);
@@ -304,35 +313,12 @@ export class AuthService {
       }
       user = found;
     } else {
-      // Determine target tenant: match by email domain or use the first active tenant
-      // For JIT provisioning, we look for an existing user by email first; if none,
-      // we need a target tenantId. The SSO endpoint accepts an optional `tenantSlug`
-      // hint; here we fall back to email-based lookup across all tenants.
-      const emailUser = await this.userRepo.findByEmail(email.toLowerCase().trim());
-      if (emailUser) {
-        // Account merge: link Entra identity to existing email/password user
-        user = await this.userRepo.upsertBySsoIdentity(
-          'entra', oid, email, displayName, emailUser.tenantId,
-        );
-      } else {
-        // True JIT provision — requires a tenantId from the Entra tenant configuration.
-        // The `tid` claim in the Entra token is the Entra tenant ID (not Rally tenant).
-        // Operators must pre-configure a Rally tenant ID mapping via ENTRA_DEFAULT_TENANT_ID.
-        const defaultRallyTenantId = this.config.get('ENTRA_DEFAULT_TENANT_ID' as never) as string | undefined;
-        if (!defaultRallyTenantId) {
-          throw new UnauthorizedException(
-            'SSO_TENANT_NOT_FOUND',
-            'No Rally tenant found for this SSO identity. Please contact your administrator.',
-          );
-        }
-        user = await this.userRepo.upsertBySsoIdentity(
-          'entra', oid, email, displayName, defaultRallyTenantId,
-        );
-      }
-
-      // Auto-assign default workspace role to newly JIT-provisioned SSO users
-      // so they can access work items without a manual admin step.
-      await this.accessService.ensureDefaultRole(user.id, user.tenantId)
+      user = await this.resolveAndProvisionSsoUser({
+        oid,
+        email: normalizedEmail,
+        displayName,
+        externalTenantId,
+      });
     }
 
     const sessionId = uuidv7();
@@ -377,6 +363,97 @@ export class AuthService {
         timezone: user.timezone,
       },
     };
+  }
+
+  /**
+   * Resolve which Rally tenant a federated (SSO) user belongs to and provision
+   * them if needed. This is the enterprise tenant-resolution chain, evaluated in
+   * priority order so that the most authoritative signal wins:
+   *
+   *   1. Existing user by email     → merge the Entra identity into their tenant.
+   *   2. SSO connection by Entra tid → provision into the mapped tenant, subject
+   *                                    to the connection's domain allow-list and
+   *                                    JIT toggle. This is the primary mechanism.
+   *   3. Dev-only env fallback       → ENTRA_DEFAULT_TENANT_ID, NON-production only.
+   *   4. Otherwise                   → 403; the user must be invited by an admin.
+   *
+   * The insecure "silently drop everyone into the default tenant" behaviour is
+   * gone: in production an unmapped IdP is rejected rather than leaking access.
+   */
+  private async resolveAndProvisionSsoUser(input: {
+    oid: string;
+    email: string;
+    displayName: string;
+    externalTenantId: string | null;
+  }): Promise<User> {
+    const { oid, email, displayName, externalTenantId } = input;
+
+    // 1. Existing email/password user → link identity, keep their tenant.
+    const emailUser = await this.userRepo.findByEmail(email);
+    if (emailUser) {
+      return this.userRepo.upsertBySsoIdentity('entra', oid, email, displayName, emailUser.tenantId);
+    }
+
+    // 2. Per-tenant SSO connection mapped by the Entra directory id (`tid`).
+    if (externalTenantId) {
+      const connection = await this.ssoConnectionRepo.findByExternalTenantId('entra', externalTenantId);
+      if (connection) {
+        if (connection.status !== 'active') {
+          throw new UnauthorizedException(
+            'SSO_CONNECTION_DISABLED',
+            'SSO for your organization is disabled. Please contact your administrator.',
+          );
+        }
+        if (!this.isEmailDomainAllowed(email, connection.allowedEmailDomains)) {
+          throw new UnauthorizedException(
+            'SSO_DOMAIN_NOT_ALLOWED',
+            'Your email domain is not permitted to sign in to this organization.',
+          );
+        }
+        if (!connection.jitEnabled) {
+          throw new UnauthorizedException(
+            'SSO_JIT_DISABLED',
+            'Automatic account creation is disabled. Please ask your administrator for an invitation.',
+          );
+        }
+        const provisioned = await this.userRepo.upsertBySsoIdentity(
+          'entra', oid, email, displayName, connection.tenantId,
+        );
+        await this.accessService.ensureDefaultRole(
+          provisioned.id,
+          provisioned.tenantId,
+          connection.defaultRoleSlug,
+        );
+        return provisioned;
+      }
+    }
+
+    // 3. Dev-only fallback — never trusted in production.
+    const defaultRallyTenantId = this.config.get('ENTRA_DEFAULT_TENANT_ID' as never) as string | undefined;
+    if (defaultRallyTenantId && process.env['NODE_ENV'] !== 'production') {
+      this.logger.warn(
+        { email, externalTenantId },
+        'SSO user provisioned via ENTRA_DEFAULT_TENANT_ID dev fallback — configure an sso_connection for production',
+      );
+      const provisioned = await this.userRepo.upsertBySsoIdentity(
+        'entra', oid, email, displayName, defaultRallyTenantId,
+      );
+      await this.accessService.ensureDefaultRole(provisioned.id, provisioned.tenantId);
+      return provisioned;
+    }
+
+    // 4. No mapping and no invitation → deny.
+    throw new UnauthorizedException(
+      'SSO_NO_ACCESS',
+      'No Rally workspace is configured for your organization. Please ask your administrator for an invitation.',
+    );
+  }
+
+  /** Returns true when the email's domain is permitted (empty list = any). */
+  private isEmailDomainAllowed(email: string, allowedDomains: string[]): boolean {
+    if (!allowedDomains || allowedDomains.length === 0) return true;
+    const domain = email.slice(email.lastIndexOf('@') + 1).toLowerCase();
+    return allowedDomains.some((d) => d.toLowerCase().trim() === domain);
   }
 
   // ---------------------------------------------------------------------------
