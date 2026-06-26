@@ -30,8 +30,15 @@ export const RATE_LIMIT_TIERS = {
    */
   AUTH_LOGIN: { limit: 5, windowSeconds: 15 * 60 },
 
-  /** Token refresh: 30 req/min — generous for tab restore / multi-tab */
-  AUTH_REFRESH: { limit: 30, windowSeconds: 60 },
+  /**
+   * Token refresh: 30 req/min per session.
+   *
+   * Keyed by SHA-256 of the HttpOnly refresh-token cookie rather than client
+   * IP. Each browser session gets its own independent bucket, so teams behind
+   * a shared corporate NAT/proxy don't exhaust each other's quota.
+   * Falls back to IP when no cookie is present (unauthenticated probe).
+   */
+  AUTH_REFRESH: { limit: 30, windowSeconds: 60, keyBy: 'refreshToken' as const },
 
   /** Forgot-password: 3 req/hour — prevents email flooding */
   AUTH_FORGOT: { limit: 3, windowSeconds: 60 * 60 },

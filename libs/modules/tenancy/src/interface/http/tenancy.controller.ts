@@ -43,6 +43,7 @@ import {
   TenantResponseDto,
   WorkspaceResponseDto,
   MemberResponseDto,
+  MemberWithProfileResponseDto,
   InvitationResponseDto,
   WorkspaceSettingsResponseDto,
 } from './dto/tenancy-response.dto';
@@ -245,6 +246,22 @@ export class WorkspaceController {
     const args = buildPageArgs(query);
     const page = await this.tenancyService.listMembers(user.tenantId, id, args);
     return { data: page.data.map(toMemberDto), pageInfo: page.pageInfo };
+  }
+
+  // ── List members with profile (for User Management UI) ─────────────────────
+
+  @Get(':id/members-with-profile')
+  @ApiOperation({ summary: 'List workspace members with user profile and role details' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: MemberWithProfileResponseDto, isArray: true })
+  @ApiCommonErrors(401, 404)
+  async listMembersWithProfile(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<MemberWithProfileResponseDto[]> {
+    return this.tenancyService.listMembersWithProfile(user.tenantId, id) as unknown as Promise<
+      MemberWithProfileResponseDto[]
+    >;
   }
 
   // ── Add member ─────────────────────────────────────────────────────────────

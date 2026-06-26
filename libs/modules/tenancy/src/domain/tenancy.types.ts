@@ -52,6 +52,23 @@ export interface WorkspaceMember {
   createdAt: Date;
 }
 
+/** Enriched member — includes user profile and current role for the User Management UI. */
+export interface WorkspaceMemberWithProfile {
+  id: string;
+  workspaceId: string;
+  userId: string;
+  status: string;
+  joinedAt: Date;
+  createdAt: Date;
+  displayName: string;
+  email: string;
+  avatarUrl: string | null;
+  roleAssignmentId: string | null;
+  roleId: string | null;
+  roleSlug: string | null;
+  roleName: string | null;
+}
+
 export interface WorkspaceInvitation {
   id: string;
   tenantId: string;

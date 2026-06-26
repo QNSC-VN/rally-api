@@ -1,5 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { createHash } from 'node:crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ValkeyService } from '../cache/valkey.service';
 import { RateLimitedException } from '../errors/exceptions';
@@ -20,13 +21,17 @@ import {
  *
  * Key strategy
  * ────────────
- * Pre-auth (login, refresh, public routes): keyed by client IP.
+ * Pre-auth (login, public routes): keyed by client IP.
  *   key = "{tier}:ip:{req.ip}"
  *
  * Post-auth (protected routes where Passport has populated req.user):
  * keyed by authenticated user ID — fairer for enterprise users behind NAT
  * or shared corporate egress IPs.
  *   key = "{tier}:uid:{userId}"
+ *
+ * Refresh (AUTH_REFRESH, keyBy: 'refreshToken'): keyed by SHA-256 of the
+ * HttpOnly refresh-token cookie — per-session, NAT-safe without a decoded JWT.
+ *   key = "{tier}:session:{sha256(cookie).slice(0,32)}"
  *
  * Response headers (RFC 6585 / IETF draft-ietf-httpapi-ratelimit-headers)
  * ────────────────────────────────────────────────────────────────────────
@@ -59,15 +64,30 @@ export class RateLimitGuard implements CanActivate {
         context.getClass(),
       ]) ?? 'DEFAULT';
 
-    const { limit, windowSeconds } = RATE_LIMIT_TIERS[tier];
+    const tierConfig = RATE_LIMIT_TIERS[tier] as (typeof RATE_LIMIT_TIERS)[typeof tier] & {
+      keyBy?: 'refreshToken';
+    };
+    const { limit, windowSeconds } = tierConfig;
 
     const req = context.switchToHttp().getRequest<FastifyRequest & { user?: { sub?: string } }>();
     const reply = context.switchToHttp().getResponse<FastifyReply>();
 
     // ── Build tracking key ───────────────────────────────────────────────────
-    // Prefer authenticated user ID so corporate NAT users aren't penalised for
-    // each other. Fall back to IP for unauthenticated endpoints.
-    const identifier = req.user?.sub ? `uid:${req.user.sub}` : `ip:${req.ip}`;
+    let identifier: string;
+    if (tierConfig.keyBy === 'refreshToken') {
+      // Per-session bucket: hash the HttpOnly cookie so raw tokens never appear
+      // in Redis keys. Falls back to IP when no cookie is present.
+      const rawCookie = (req.cookies as Record<string, string | undefined> | undefined)?.[
+        'refresh_token'
+      ];
+      identifier = rawCookie
+        ? `session:${createHash('sha256').update(rawCookie).digest('hex').slice(0, 32)}`
+        : `ip:${req.ip}`;
+    } else {
+      // Prefer authenticated user ID so corporate NAT users aren't penalised for
+      // each other. Fall back to IP for unauthenticated endpoints.
+      identifier = req.user?.sub ? `uid:${req.user.sub}` : `ip:${req.ip}`;
+    }
     const key = `${tier}:${identifier}`;
 
     // ── Consume one token from the bucket ────────────────────────────────────

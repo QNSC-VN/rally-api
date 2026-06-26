@@ -32,6 +32,7 @@ import type {
   Tenant,
   Workspace,
   WorkspaceMember,
+  WorkspaceMemberWithProfile,
   WorkspaceInvitation,
   WorkspaceSettings,
   UpdateWorkspaceInput,
@@ -162,6 +163,14 @@ export class TenancyService {
   ): Promise<PagedResult<WorkspaceMember>> {
     await this.getWorkspace(tenantId, workspaceId);
     return this.memberRepo.listMembers(workspaceId, args);
+  }
+
+  async listMembersWithProfile(
+    tenantId: string,
+    workspaceId: string,
+  ): Promise<WorkspaceMemberWithProfile[]> {
+    await this.getWorkspace(tenantId, workspaceId);
+    return this.memberRepo.listMembersWithProfile(workspaceId);
   }
 
   @Span('tenancy.addMember')
