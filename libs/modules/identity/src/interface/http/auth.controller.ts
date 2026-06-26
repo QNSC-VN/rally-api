@@ -21,6 +21,7 @@ import {
   ForgotPasswordDto,
   ResetPasswordDto,
   SsoLoginDto,
+  SwitchTenantDto,
 } from './dto/login.dto';
 import { AuthTokenResponseDto, UserProfileResponseDto } from './dto/auth-response.dto';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -205,6 +206,35 @@ export class AuthController {
   }
 
   // ── POST /auth/logout ──────────────────────────────────────────────────────
+
+  // ── POST /auth/switch-tenant ───────────────────────────────────────────────
+
+  @Post('switch-tenant')
+  @Auth()
+  @HttpCode(200)
+  @RateLimit('AUTH_REFRESH')
+  @ApiOperation({ summary: 'Switch active tenant and re-issue tokens' })
+  @ApiResponse({
+    status: 200,
+    schema: { properties: { accessToken: { type: 'string' }, expiresIn: { type: 'number' } } },
+  })
+  @ApiCommonErrors(401, 403)
+  async switchTenant(
+    @Body() dto: SwitchTenantDto,
+    @CurrentUser() user: JwtPayload,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Omit<AuthTokenResponseDto, 'user' | 'memberships'>> {
+    const result = await this.authService.switchTenant(user, dto.tenantId, req.ip);
+
+    reply.setCookie(
+      REFRESH_COOKIE,
+      result.refreshToken,
+      this.buildRefreshCookieOptions(req, 30 * 24 * 60 * 60),
+    );
+
+    return { accessToken: result.accessToken, expiresIn: result.expiresIn };
+  }
 
   @Post('logout')
   @Auth()

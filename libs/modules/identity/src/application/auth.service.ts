@@ -107,7 +107,7 @@ export class AuthService {
     const activeTenantId = memberships[0]?.tenantId ?? user.tenantId;
 
     const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, activeTenantId);
-    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions);
+    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions, activeTenantId);
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
 
     // AUTH-FR: rememberMe = 30d session; not remembered = 24h session
@@ -224,7 +224,7 @@ export class AuthService {
     const sessionId = uuidv7();
     const memberships = await this.tenancyService.getMemberships(user.id);
     const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, tenantId);
-    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions);
+    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions, tenantId);
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
     const refreshExpiry = new Date();
     refreshExpiry.setSeconds(refreshExpiry.getSeconds() + this.refreshTtlSeconds());
@@ -330,8 +330,8 @@ export class AuthService {
 
     // Revoke old session and issue new tokens (rotation)
     const newSessionId = uuidv7();
-    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, user.tenantId);
-    const { accessToken, expiresIn } = this.signAccessToken(user, newSessionId, permissions);
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, session.tenantId);
+    const { accessToken, expiresIn } = this.signAccessToken(user, newSessionId, permissions, session.tenantId);
     const { refreshToken: newRefreshToken, tokenHash: newHash } = this.generateRefreshToken();
 
     const refreshExpiry = new Date();
@@ -340,12 +340,12 @@ export class AuthService {
     // Atomic token rotation: revoke old session and issue new in one tx.
     // If either write fails the whole rotation rolls back, so we never end up
     // with two live refresh tokens (token-reuse / privilege-escalation gap).
-    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+    await this.rls.withTenantContext(session.tenantId, async (tx) => {
       await this.sessionRepo.revokeById(session.id, tx);
       await this.sessionRepo.create(
         {
           id: newSessionId,
-          tenantId: user.tenantId,
+          tenantId: session.tenantId,
           userId: user.id,
           tokenHash: newHash,
           familyId: session.familyId, // preserve family for revocation chain
@@ -460,7 +460,7 @@ export class AuthService {
 
     const sessionId = uuidv7();
     const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, user.tenantId);
-    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions);
+    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions, user.tenantId);
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
 
     const refreshExpiry = new Date();
@@ -667,6 +667,7 @@ export class AuthService {
     user: User,
     sessionId: string,
     permissions: string[],
+    tenantId: string,
   ): { accessToken: string; jti: string; expiresIn: number } {
     const jti = uuidv7();
     // Keep the client-facing expiresIn in lock-step with the JWT signing config
@@ -675,7 +676,7 @@ export class AuthService {
 
     const payload: Omit<JwtPayload, 'iat' | 'exp' | 'iss' | 'aud'> = {
       sub: user.id,
-      tenantId: user.tenantId,
+      tenantId,
       sessionId,
       jti,
       permissions,
@@ -854,5 +855,75 @@ export class AuthService {
     });
 
     this.logger.log({ userId: record.userId }, 'Password reset successfully');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Switch tenant
+  // ---------------------------------------------------------------------------
+
+  @Span('auth.switchTenant')
+  async switchTenant(
+    payload: JwtPayload,
+    targetTenantId: string,
+    ipAddress?: string,
+  ): Promise<RefreshResult> {
+    // Verify the caller has an active keycard for the target tenant.
+    const keycard = await this.tenancyService.getTenantMember(payload.sub, targetTenantId);
+    if (!keycard || keycard.status !== 'active') {
+      throw new UnauthorizedException('TENANT_ACCESS_DENIED', 'You are not a member of this tenant');
+    }
+
+    const user = await this.userRepo.findById(payload.sub);
+    if (!user || user.deletedAt || user.status === 'suspended' || user.status === 'inactive') {
+      throw new UnauthorizedException('USER_DEACTIVATED', 'User not found or deactivated');
+    }
+
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, targetTenantId);
+
+    const newSessionId = uuidv7();
+    const { accessToken, jti, expiresIn } = this.signAccessToken(user, newSessionId, permissions, targetTenantId);
+    const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
+
+    const refreshExpiry = new Date();
+    refreshExpiry.setSeconds(refreshExpiry.getSeconds() + this.refreshTtlSeconds());
+
+    // Denylist old access token + revoke old session + create new session atomically.
+    const now = Math.floor(Date.now() / 1000);
+    const ttl = Math.max((payload.exp ?? 0) - now, 0);
+
+    await Promise.all([
+      ttl > 0 ? this.valkey.denylistToken(payload.jti, ttl) : Promise.resolve(),
+      this.rls.withTenantContext(targetTenantId, async (tx) => {
+        await this.sessionRepo.revokeById(payload.sessionId, tx);
+        await this.sessionRepo.create(
+          {
+            id: newSessionId,
+            tenantId: targetTenantId,
+            userId: user.id,
+            tokenHash,
+            familyId,
+            ipAddress,
+            expiresAt: refreshExpiry,
+          },
+          tx,
+        );
+      }),
+    ]);
+
+    this.logger.log({ userId: user.id, jti, sessionId: newSessionId, targetTenantId }, 'Tenant switched');
+
+    void this.tenancyService.touchTenantMembership(user.id, targetTenantId);
+    void this.audit.record({
+      tenantId: targetTenantId,
+      actorId: user.id,
+      actorEmail: user.email,
+      action: 'auth.switch_tenant',
+      resourceType: 'session',
+      resourceId: newSessionId,
+      ipAddress,
+      metadata: { fromTenantId: payload.tenantId, toTenantId: targetTenantId },
+    });
+
+    return { accessToken, refreshToken, expiresIn };
   }
 }

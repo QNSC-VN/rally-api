@@ -152,6 +152,11 @@ export class TenancyService {
     return this.tenantMemberRepo.findByUserId(userId);
   }
 
+  /** Return a single tenant membership (keycard) for a user+tenant pair. */
+  async getTenantMember(userId: string, tenantId: string) {
+    return this.tenantMemberRepo.findByUserAndTenant(userId, tenantId);
+  }
+
   /**
    * Stamp last_active_at on a user's keycard so that next login auto-selects
    * the tenant they were most recently active in (Linear-style switcher).

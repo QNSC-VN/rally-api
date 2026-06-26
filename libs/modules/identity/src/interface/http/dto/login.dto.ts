@@ -75,3 +75,11 @@ export const SsoLoginSchema = z.object({
 });
 
 export class SsoLoginDto extends createZodDto(SsoLoginSchema) {}
+
+// ── Switch tenant ────────────────────────────────────────────────────────────
+
+export const SwitchTenantSchema = z.object({
+  tenantId: z.string().uuid('tenantId must be a valid UUID'),
+});
+
+export class SwitchTenantDto extends createZodDto(SwitchTenantSchema) {}
