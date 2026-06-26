@@ -31,7 +31,6 @@ export class UserDrizzleRepository implements IUserRepository {
 
   async create(
     input: {
-      tenantId: string;
       email: string;
       displayName: string;
       passwordHash: string;
@@ -43,7 +42,6 @@ export class UserDrizzleRepository implements IUserRepository {
       .insert(users)
       .values({
         id: uuidv7(),
-        tenantId: input.tenantId,
         email: input.email.toLowerCase().trim(),
         displayName: input.displayName,
         passwordHash: input.passwordHash,
@@ -177,10 +175,10 @@ export class UserDrizzleRepository implements IUserRepository {
       .then((r) => r[0] ?? null);
 
     if (existingUser) {
-      // Link the SSO identity to the existing user
+      // Link the SSO identity to the existing user (tenantId = SSO connection's tenant)
       await executor.insert(ssoIdentities).values({
         id: uuidv7(),
-        tenantId: existingUser.tenantId,
+        tenantId,
         userId: existingUser.id,
         provider,
         providerSub,
@@ -195,7 +193,6 @@ export class UserDrizzleRepository implements IUserRepository {
       .insert(users)
       .values({
         id: userId,
-        tenantId,
         email: emailNormalized,
         displayName,
         status: 'active',

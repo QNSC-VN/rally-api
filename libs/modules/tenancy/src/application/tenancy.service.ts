@@ -157,6 +157,11 @@ export class TenancyService {
     return this.tenantMemberRepo.findByUserAndTenant(userId, tenantId);
   }
 
+  /** Idempotently create a tenant_members keycard for a user. */
+  async tenantMemberCreate(id: string, tenantId: string, userId: string): Promise<void> {
+    await this.tenantMemberRepo.create({ id, tenantId, userId });
+  }
+
   /**
    * Stamp last_active_at on a user's keycard so that next login auto-selects
    * the tenant they were most recently active in (Linear-style switcher).

@@ -16,8 +16,9 @@ import {
   TenantRlsService,
   addHours,
   parseDurationToSeconds,
+  InjectDrizzle,
 } from '@platform';
-import type { JwtPayload } from '@platform';
+import type { JwtPayload, DrizzleDB } from '@platform';
 import { AccessService } from '@modules/access';
 import { TenancyService } from '@modules/tenancy';
 import type { TenantMembership } from '@modules/tenancy';
@@ -53,6 +54,7 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
+    @InjectDrizzle() private readonly db: DrizzleDB,
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     @Inject(AUTH_SESSION_REPOSITORY) private readonly sessionRepo: IAuthSessionRepository,
     @Inject(SSO_CONNECTION_REPOSITORY) private readonly ssoConnectionRepo: ISsoConnectionRepository,
@@ -101,10 +103,12 @@ export class AuthService {
     }
 
     const sessionId = uuidv7();
-    // Load keycards — pick the most-recently-active tenant; fall back to users.tenant_id
-    // for existing users who existed before tenant_members was backfilled.
+    // Load keycards — pick the most-recently-active tenant.
     const memberships = await this.tenancyService.getMemberships(user.id);
-    const activeTenantId = memberships[0]?.tenantId ?? user.tenantId;
+    const activeTenantId = memberships[0]?.tenantId;
+    if (!activeTenantId) {
+      throw new UnauthorizedException('ACCOUNT_DEACTIVATED', 'No active tenant membership found');
+    }
 
     const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, activeTenantId);
     const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions, activeTenantId);
@@ -210,7 +214,6 @@ export class AuthService {
     }
 
     const user = await this.userRepo.create({
-      tenantId,
       email,
       displayName: input.displayName,
       passwordHash,
@@ -443,32 +446,41 @@ export class AuthService {
     const existingIdentity = await this.userRepo.findSsoIdentity('entra', oid);
 
     let user: User;
+    let ssoTenantId: string;
     if (existingIdentity) {
       const found = await this.userRepo.findById(existingIdentity.userId);
       if (!found || found.deletedAt || found.status === 'suspended' || found.status === 'inactive') {
         throw new UnauthorizedException('USER_DEACTIVATED', 'Account is not active');
       }
       user = found;
+      // Determine active tenant from memberships (most-recently-active first).
+      const membershipsEarly = await this.tenancyService.getMemberships(user.id);
+      ssoTenantId = membershipsEarly[0]?.tenantId ?? '';
+      if (!ssoTenantId) {
+        throw new UnauthorizedException('ACCOUNT_DEACTIVATED', 'No active tenant membership found');
+      }
     } else {
-      user = await this.resolveAndProvisionSsoUser({
+      const provisioned = await this.resolveAndProvisionSsoUser({
         oid,
         email: normalizedEmail,
         displayName,
         externalTenantId,
       });
+      user = provisioned.user;
+      ssoTenantId = provisioned.tenantId;
     }
 
     const sessionId = uuidv7();
-    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, user.tenantId);
-    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions, user.tenantId);
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, ssoTenantId);
+    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions, ssoTenantId);
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
 
     const refreshExpiry = new Date();
     refreshExpiry.setSeconds(refreshExpiry.getSeconds() + this.refreshTtlSeconds());
 
-    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+    await this.rls.withTenantContext(ssoTenantId, async (tx) => {
       await this.sessionRepo.create(
-        { id: sessionId, tenantId: user.tenantId, userId: user.id, tokenHash, familyId, ipAddress, expiresAt: refreshExpiry },
+        { id: sessionId, tenantId: ssoTenantId, userId: user.id, tokenHash, familyId, ipAddress, expiresAt: refreshExpiry },
         tx,
       );
       await this.userRepo.updateLastLogin(user.id, tx);
@@ -477,7 +489,7 @@ export class AuthService {
     this.logger.log({ userId: user.id, jti, sessionId, provider: 'entra' }, 'User logged in via SSO');
 
     void this.audit.record({
-      tenantId: user.tenantId,
+      tenantId: ssoTenantId,
       actorId: user.id,
       actorEmail: user.email,
       action: 'auth.login.sso',
@@ -488,7 +500,7 @@ export class AuthService {
     });
 
     const memberships = await this.tenancyService.getMemberships(user.id);
-    void this.tenancyService.touchTenantMembership(user.id, user.tenantId);
+    void this.tenancyService.touchTenantMembership(user.id, ssoTenantId);
 
     return {
       accessToken,
@@ -526,16 +538,14 @@ export class AuthService {
     email: string;
     displayName: string;
     externalTenantId: string | null;
-  }): Promise<User> {
+  }): Promise<{ user: User; tenantId: string }> {
     const { oid, email, displayName, externalTenantId } = input;
 
-    // 1. Existing email/password user → link identity, keep their tenant.
-    const emailUser = await this.userRepo.findByEmail(email);
-    if (emailUser) {
-      return this.userRepo.upsertBySsoIdentity('entra', oid, email, displayName, emailUser.tenantId);
-    }
+    // Determine the Rally tenantId from the SSO connection first, so we always
+    // have an explicit tenant regardless of whether the user pre-exists.
+    let connectionTenantId: string | null = null;
+    let defaultRoleSlug: string | undefined;
 
-    // 2. Per-tenant SSO connection mapped by the Entra directory id (`tid`).
     if (externalTenantId) {
       const connection = await this.ssoConnectionRepo.findByExternalTenantId('entra', externalTenantId);
       if (connection) {
@@ -557,37 +567,44 @@ export class AuthService {
             'Automatic account creation is disabled. Please ask your administrator for an invitation.',
           );
         }
-        const provisioned = await this.userRepo.upsertBySsoIdentity(
-          'entra', oid, email, displayName, connection.tenantId,
-        );
-        await this.accessService.ensureDefaultRole(
-          provisioned.id,
-          provisioned.tenantId,
-          connection.defaultRoleSlug,
-        );
-        return provisioned;
+        connectionTenantId = connection.tenantId;
+        defaultRoleSlug = connection.defaultRoleSlug;
       }
     }
 
-    // 3. Dev-only fallback — never trusted in production.
-    const defaultRallyTenantId = this.config.get('ENTRA_DEFAULT_TENANT_ID' as never) as string | undefined;
-    if (defaultRallyTenantId && process.env['NODE_ENV'] !== 'production') {
-      this.logger.warn(
-        { email, externalTenantId },
-        'SSO user provisioned via ENTRA_DEFAULT_TENANT_ID dev fallback — configure an sso_connection for production',
-      );
-      const provisioned = await this.userRepo.upsertBySsoIdentity(
-        'entra', oid, email, displayName, defaultRallyTenantId,
-      );
-      await this.accessService.ensureDefaultRole(provisioned.id, provisioned.tenantId);
-      return provisioned;
+    // Dev-only fallback — never trusted in production.
+    if (!connectionTenantId) {
+      const fallback = this.config.get('ENTRA_DEFAULT_TENANT_ID' as never) as string | undefined;
+      if (fallback && process.env['NODE_ENV'] !== 'production') {
+        this.logger.warn(
+          { email, externalTenantId },
+          'SSO user provisioned via ENTRA_DEFAULT_TENANT_ID dev fallback — configure an sso_connection for production',
+        );
+        connectionTenantId = fallback;
+      }
     }
 
-    // 4. No mapping and no invitation → deny.
-    throw new UnauthorizedException(
-      'SSO_NO_ACCESS',
-      'No Rally workspace is configured for your organization. Please ask your administrator for an invitation.',
-    );
+    if (!connectionTenantId) {
+      throw new UnauthorizedException(
+        'SSO_NO_ACCESS',
+        'No Rally workspace is configured for your organization. Please ask your administrator for an invitation.',
+      );
+    }
+
+    const tenantId = connectionTenantId;
+
+    // Upsert the user + SSO identity link. tenant_id on sso_identities is set
+    // to the SSO connection's tenant. The users table no longer has tenant_id.
+    const user = await this.userRepo.upsertBySsoIdentity('entra', oid, email, displayName, tenantId);
+
+    // Ensure keycard exists for this user in the SSO connection's tenant.
+    await this.tenancyService.tenantMemberCreate(uuidv7(), tenantId, user.id);
+
+    if (defaultRoleSlug) {
+      await this.accessService.ensureDefaultRole(user.id, tenantId, defaultRoleSlug);
+    }
+
+    return { user, tenantId };
   }
 
   /** Returns true when the email's domain is permitted (empty list = any). */
@@ -763,7 +780,12 @@ export class AuthService {
     // A new forgot-password submit generates a new token → new hash → new key,
     // which is intentional (user requested a fresh token).
     const emailKey = this.hashToken(`password-reset:${tokenHash}`);
-    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+    const [firstMembership] = await this.tenancyService.getMemberships(user.id);
+    const pwResetTenantId = firstMembership?.tenantId;
+    if (!pwResetTenantId) {
+      throw new NotFoundException('USER_NOT_FOUND', 'User has no active tenant membership');
+    }
+    await this.rls.withTenantContext(pwResetTenantId, async (tx) => {
       await this.userRepo.createPasswordResetToken(user.id, tokenHash, expiresAt, tx);
       await this.emailScheduler.schedule(
         {
@@ -848,7 +870,9 @@ export class AuthService {
     // Atomic: update password, consume the token, and revoke every active
     // session together. A partial failure here would otherwise leave old
     // refresh tokens valid after a password reset (session-hijacking gap).
-    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+    // Uses a superuser (RLS-bypassing) transaction so sessions are revoked
+    // across ALL tenants, not just the user's most-recent active tenant.
+    await this.db.transaction(async (tx) => {
       await this.userRepo.updatePasswordHash(record.userId, newHash, tx);
       await this.userRepo.markPasswordResetTokenUsed(record.id, tx);
       await this.sessionRepo.revokeAllForUser(record.userId, tx); // AUTH-FR-009

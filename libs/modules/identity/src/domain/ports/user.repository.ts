@@ -9,7 +9,6 @@ export interface IUserRepository {
   /** Create a new password-based user (self-serve signup). */
   create(
     input: {
-      tenantId: string;
       email: string;
       displayName: string;
       passwordHash: string;

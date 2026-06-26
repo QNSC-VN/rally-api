@@ -7,7 +7,6 @@ export type { UserStatus };
 
 export interface User {
   id: string;
-  tenantId: string;
   email: string;
   displayName: string;
   avatarUrl: string | null;
@@ -85,7 +84,6 @@ export interface SsoConnection {
 }
 
 export interface CreateUserInput {
-  tenantId: string;
   email: string;
   displayName: string;
   avatarUrl?: string;

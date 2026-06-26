@@ -24,7 +24,6 @@ export const users = identitySchema.table(
   'users',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    tenantId: uuid('tenant_id').notNull(),
     email: varchar('email', { length: 320 }).notNull(),
     displayName: varchar('display_name', { length: 255 }).notNull(),
     avatarUrl: varchar('avatar_url', { length: 2048 }),
@@ -42,12 +41,8 @@ export const users = identitySchema.table(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (t) => ({
-    tenantIdx: index('ix_users_tenant').on(t.tenantId),
     emailIdx: uniqueIndex('uq_users_email')
       .on(t.email)
-      .where(sql`deleted_at IS NULL`),
-    tenantEmailIdx: uniqueIndex('uq_users_tenant_email')
-      .on(t.tenantId, t.email)
       .where(sql`deleted_at IS NULL`),
   }),
 );

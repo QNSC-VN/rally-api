@@ -134,6 +134,13 @@
       "when": 1782800000000,
       "tag": "0018_users_membership_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1782479593580,
+      "tag": "0019_drop_users_tenant_id",
+      "breakpoints": true
     }
   ]
 }
