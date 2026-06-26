@@ -28,7 +28,7 @@ import {
   RateLimit,
 } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
-import { CurrentUser } from '@modules/identity';
+import { CurrentUser } from '@modules/identity/interface/http/decorators/current-user.decorator';
 import { TenancyService } from '../../application/tenancy.service';
 import {
   CreateWorkspaceDto,

@@ -9,6 +9,7 @@ import {
   ValkeyService,
   UnauthorizedException,
   NotFoundException,
+  ConflictException,
   PreconditionFailedException,
   Span,
   EmailSchedulerService,
@@ -18,6 +19,7 @@ import {
 } from '@platform';
 import type { JwtPayload } from '@platform';
 import { AccessService } from '@modules/access';
+import { TenancyService } from '@modules/tenancy';
 import { AuditService } from '@modules/audit';
 import { IUserRepository, USER_REPOSITORY } from '../domain/ports/user.repository';
 import {
@@ -57,6 +59,7 @@ export class AuthService {
     private readonly emailScheduler: EmailSchedulerService,
     private readonly rls: TenantRlsService,
     private readonly accessService: AccessService,
+    private readonly tenancyService: TenancyService,
     private readonly audit: AuditService,
   ) {}
 
@@ -147,6 +150,127 @@ export class AuthService {
         timezone: user.timezone,
       },
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sign up (self-serve) — creates or joins a tenant by email domain
+  // ---------------------------------------------------------------------------
+
+  @Span('auth.signup')
+  async signup(
+    input: { email: string; password: string; displayName: string; organizationName?: string },
+    ipAddress?: string,
+  ): Promise<LoginResult> {
+    const email = input.email.toLowerCase().trim();
+    const domain = email.slice(email.lastIndexOf('@') + 1);
+
+    // Email is globally unique — one email maps to exactly one account/tenant.
+    const existing = await this.userRepo.findByEmail(email);
+    if (existing) {
+      throw new ConflictException(
+        'EMAIL_ALREADY_REGISTERED',
+        'An account with this email already exists',
+      );
+    }
+
+    const passwordHash = await AuthService.hashPassword(input.password);
+
+    // Domain-aware tenant resolution:
+    //   1. verified + auto-join domain → join that existing tenant as a member
+    //   2. otherwise                    → provision a NEW tenant; signer = admin
+    const autoJoin = await this.tenancyService.findAutoJoinTarget(domain);
+
+    let tenantId: string;
+    let workspaceId: string;
+    let roleSlug: string;
+
+    if (autoJoin) {
+      tenantId = autoJoin.tenantId;
+      workspaceId = autoJoin.workspaceId;
+      roleSlug = 'project_member';
+    } else {
+      const orgName =
+        input.organizationName?.trim() || this.defaultOrgName(input.displayName, email);
+      // Only claim corporate domains — never public providers (gmail, etc.).
+      const claimDomain = AuthService.isPublicEmailDomain(domain) ? null : domain;
+      const { tenant, workspace } = await this.tenancyService.provisionTenant(orgName, claimDomain);
+      tenantId = tenant.id;
+      workspaceId = workspace.id;
+      roleSlug = 'workspace_admin';
+    }
+
+    const user = await this.userRepo.create({
+      tenantId,
+      email,
+      displayName: input.displayName,
+      passwordHash,
+    });
+
+    // Enroll as workspace member + grant the resolved role.
+    await this.tenancyService.enrollMember(tenantId, workspaceId, user.id);
+    await this.accessService.ensureDefaultRole(user.id, tenantId, roleSlug);
+
+    // Issue a login session (mirrors login()).
+    const sessionId = uuidv7();
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, tenantId);
+    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions);
+    const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
+    const refreshExpiry = new Date();
+    refreshExpiry.setSeconds(refreshExpiry.getSeconds() + this.refreshTtlSeconds());
+
+    await this.rls.withTenantContext(tenantId, async (tx) => {
+      await this.sessionRepo.create(
+        { id: sessionId, tenantId, userId: user.id, tokenHash, familyId, ipAddress, expiresAt: refreshExpiry },
+        tx,
+      );
+      await this.userRepo.updateLastLogin(user.id, tx);
+    });
+
+    this.logger.log(
+      { userId: user.id, tenantId, jti, sessionId, mode: autoJoin ? 'join' : 'new-tenant' },
+      'User signed up',
+    );
+
+    void this.audit.record({
+      tenantId,
+      actorId: user.id,
+      actorEmail: user.email,
+      action: 'auth.signup',
+      resourceType: 'user',
+      resourceId: user.id,
+      ipAddress,
+      metadata: { mode: autoJoin ? 'join' : 'new-tenant' },
+    });
+
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn,
+      user: {
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+        locale: user.locale,
+        timezone: user.timezone,
+      },
+    };
+  }
+
+  private defaultOrgName(displayName: string, email: string): string {
+    const first = displayName.trim().split(/\s+/)[0] || email.split('@')[0];
+    return `${first}'s Workspace`;
+  }
+
+  /** Common free/public email providers that must never be claimed as a tenant domain. */
+  private static readonly PUBLIC_EMAIL_DOMAINS = new Set([
+    'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com',
+    'yahoo.com', 'ymail.com', 'icloud.com', 'me.com', 'aol.com', 'proton.me',
+    'protonmail.com', 'gmx.com', 'mail.com', 'zoho.com', 'yandex.com', 'qq.com',
+  ]);
+
+  private static isPublicEmailDomain(domain: string): boolean {
+    return AuthService.PUBLIC_EMAIL_DOMAINS.has(domain.toLowerCase());
   }
 
   // ---------------------------------------------------------------------------

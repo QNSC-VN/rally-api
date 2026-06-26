@@ -6,6 +6,17 @@ export const USER_REPOSITORY = Symbol('USER_REPOSITORY');
 export interface IUserRepository {
   findByEmail(email: string): Promise<User | null>;
   findById(id: string): Promise<User | null>;
+  /** Create a new password-based user (self-serve signup). */
+  create(
+    input: {
+      tenantId: string;
+      email: string;
+      displayName: string;
+      passwordHash: string;
+      emailVerified?: boolean;
+    },
+    tx?: DbExecutor,
+  ): Promise<User>;
   updateLastLogin(id: string, tx?: DbExecutor): Promise<void>;
   updatePasswordHash(id: string, passwordHash: string, tx?: DbExecutor): Promise<void>;
   updateStatus(id: string, status: string, tx?: DbExecutor): Promise<void>;

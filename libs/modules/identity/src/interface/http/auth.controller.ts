@@ -15,6 +15,7 @@ import { AuthService } from '../../application/auth.service';
 import { AccessService } from '@modules/access';
 import {
   LoginDto,
+  SignupDto,
   ChangePasswordDto,
   UpdateProfileDto,
   ForgotPasswordDto,
@@ -90,6 +91,43 @@ export class AuthController {
       REFRESH_COOKIE,
       result.refreshToken,
       this.buildRefreshCookieOptions(req, cookieMaxAge),
+    );
+
+    return {
+      accessToken: result.accessToken,
+      expiresIn: result.expiresIn,
+      user: result.user,
+    };
+  }
+
+  // ── POST /auth/signup ───────────────────────────────────────────────────────
+
+  @Post('signup')
+  @Public()
+  @RateLimit('AUTH_LOGIN')
+  @HttpCode(201)
+  @ApiOperation({ summary: 'Self-serve signup — create or join a tenant by email domain' })
+  @ApiResponse({ status: 201, type: AuthTokenResponseDto })
+  @ApiCommonErrors(400, 409, 422)
+  async signup(
+    @Body() dto: SignupDto,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<AuthTokenResponseDto> {
+    const result = await this.authService.signup(
+      {
+        email: dto.email,
+        password: dto.password,
+        displayName: dto.displayName,
+        organizationName: dto.organizationName,
+      },
+      req.ip,
+    );
+
+    reply.setCookie(
+      REFRESH_COOKIE,
+      result.refreshToken,
+      this.buildRefreshCookieOptions(req, 24 * 60 * 60),
     );
 
     return {

@@ -12,7 +12,7 @@ import {
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Auth, ApiCommonErrors } from '@platform';
 import type { JwtPayload } from '@platform';
-import { CurrentUser } from '@modules/identity';
+import { CurrentUser } from '@modules/identity/interface/http/decorators/current-user.decorator';
 import { TeamService } from '../../application/team.service';
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';

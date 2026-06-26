@@ -28,6 +28,10 @@ import {
   IWorkspaceSettingsRepository,
   WORKSPACE_SETTINGS_REPOSITORY,
 } from '../domain/ports/workspace-settings.repository';
+import {
+  ITenantDomainRepository,
+  TENANT_DOMAIN_REPOSITORY,
+} from '../domain/ports/tenant-domain.repository';
 import type {
   Tenant,
   Workspace,
@@ -38,6 +42,8 @@ import type {
   UpdateWorkspaceInput,
   UpdateMemberInput,
   UpdateWorkspaceSettingsInput,
+  ProvisionedTenant,
+  AutoJoinTarget,
 } from '../domain/tenancy.types';
 
 @Injectable()
@@ -52,11 +58,93 @@ export class TenancyService {
     private readonly invitationRepo: IWorkspaceInvitationRepository,
     @Inject(WORKSPACE_SETTINGS_REPOSITORY)
     private readonly settingsRepo: IWorkspaceSettingsRepository,
+    @Inject(TENANT_DOMAIN_REPOSITORY)
+    private readonly tenantDomainRepo: ITenantDomainRepository,
     private readonly config: AppConfigService,
     private readonly emailScheduler: EmailSchedulerService,
     private readonly uow: UnitOfWork,
     private readonly rls: TenantRlsService,
   ) {}
+
+  // ── Self-serve provisioning (signup) ─────────────────────────────────────────
+
+  /**
+   * Provision a brand-new tenant for self-serve signup: tenant + default
+   * workspace + trial subscription, all atomically. When a corporate email
+   * domain is supplied, an UNVERIFIED domain claim is recorded so an admin can
+   * later verify it and enable auto-join (the enterprise domain-capture seam).
+   */
+  @Span('tenancy.provisionTenant')
+  async provisionTenant(orgName: string, primaryDomain: string | null): Promise<ProvisionedTenant> {
+    const tenantId = uuidv7();
+    const slug = `${this.slugify(orgName)}-${randomBytes(3).toString('hex')}`.slice(0, 63);
+
+    // A brand-new tenant has no pre-existing request context, so we run the
+    // provisioning writes inside the NEW tenant's own RLS context — every row
+    // created here belongs to this tenant, satisfying the RLS policies.
+    return this.rls.withTenantContext(tenantId, async (tx) => {
+      const tenant = await this.tenantRepo.create({ id: tenantId, slug, name: orgName }, tx);
+
+      const workspace = await this.workspaceRepo.create(
+        { id: uuidv7(), tenantId: tenant.id, slug: 'main', name: orgName },
+        tx,
+      );
+
+      // Trial subscription — payment later flips this to active via billing webhook.
+      await this.tenantRepo.createSubscription(tenant.id, 'free', 'trialing', tx);
+
+      if (primaryDomain) {
+        await this.tenantDomainRepo.create(
+          { id: uuidv7(), tenantId: tenant.id, domain: primaryDomain, verified: null, allowAutoJoin: false },
+          tx,
+        );
+      }
+
+      this.logger.log({ tenantId: tenant.id, slug, primaryDomain }, 'Tenant provisioned via signup');
+      return { tenant, workspace };
+    });
+  }
+
+  /**
+   * Resolve the tenant/workspace a signup should auto-join based on a verified,
+   * auto-join-enabled domain claim. Returns null when no such claim exists, in
+   * which case the caller provisions a fresh tenant instead.
+   */
+  async findAutoJoinTarget(domain: string): Promise<AutoJoinTarget | null> {
+    const claim = await this.tenantDomainRepo.findByDomain(domain.toLowerCase());
+    if (!claim || !claim.verified || !claim.allowAutoJoin) return null;
+
+    const workspaces = await this.workspaceRepo.listByTenant(claim.tenantId, {
+      limit: 1,
+      cursor: null,
+    });
+    const workspace = workspaces.data[0];
+    if (!workspace) return null;
+
+    return { tenantId: claim.tenantId, workspaceId: workspace.id };
+  }
+
+  /** Enroll a user as an active member of a workspace (used during signup). */
+  async enrollMember(
+    tenantId: string,
+    workspaceId: string,
+    userId: string,
+    roleId?: string,
+  ): Promise<void> {
+    await this.memberRepo.addMember({ id: uuidv7(), tenantId, workspaceId, userId, roleId });
+  }
+
+  /** Slugify an org name into a URL-safe tenant slug fragment. */
+  private slugify(name: string): string {
+    return (
+      name
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40) || 'org'
+    );
+  }
 
   // ── Tenant ──────────────────────────────────────────────────────────────────
 

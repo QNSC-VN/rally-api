@@ -9,9 +9,10 @@ import { USER_REPOSITORY } from './domain/ports/user.repository';
 import { AUTH_SESSION_REPOSITORY } from './domain/ports/auth-session.repository';
 import { SSO_CONNECTION_REPOSITORY } from './domain/ports/sso-connection.repository';
 import { AccessModule } from '@modules/access';
+import { TenancyModule } from '@modules/tenancy';
 
 @Module({
-  imports: [AccessModule],
+  imports: [AccessModule, TenancyModule],
   controllers: [IdentityController, AuthController],
   providers: [
     AuthService,

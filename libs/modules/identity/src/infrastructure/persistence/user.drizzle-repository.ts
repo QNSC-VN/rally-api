@@ -29,6 +29,31 @@ export class UserDrizzleRepository implements IUserRepository {
     return rows[0] ?? null;
   }
 
+  async create(
+    input: {
+      tenantId: string;
+      email: string;
+      displayName: string;
+      passwordHash: string;
+      emailVerified?: boolean;
+    },
+    tx?: DbExecutor,
+  ): Promise<User> {
+    const [row] = await (tx ?? this.db)
+      .insert(users)
+      .values({
+        id: uuidv7(),
+        tenantId: input.tenantId,
+        email: input.email.toLowerCase().trim(),
+        displayName: input.displayName,
+        passwordHash: input.passwordHash,
+        status: 'active',
+        emailVerified: input.emailVerified ?? false,
+      })
+      .returning();
+    return row as User;
+  }
+
   async updateLastLogin(id: string, tx?: DbExecutor): Promise<void> {
     await (tx ?? this.db).update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, id));
   }

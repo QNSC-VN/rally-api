@@ -8,6 +8,7 @@ import {
   varchar,
   text,
   integer,
+  boolean,
   timestamp,
   jsonb,
   index,
@@ -156,6 +157,36 @@ export const subscriptions = tenancySchema.table(
   },
   (t) => ({
     tenantIdx: uniqueIndex('uq_subscriptions_tenant').on(t.tenantId),
+  }),
+);
+
+// ── tenant_domains ──────────────────────────────────────────────────────────
+// Email-domain claims that bind a company's domain to a tenant. This is the
+// enterprise "domain capture" mechanism that prevents tenant sprawl: once a
+// domain is verified AND auto-join is enabled, new signups with that email
+// domain join the existing tenant instead of creating a fragmented new one.
+//
+// A claim is created (unverified, auto-join off) the first time a tenant is
+// provisioned from a corporate email. An admin later verifies ownership and
+// opts in to auto-join.
+
+export const tenantDomains = tenancySchema.table(
+  'tenant_domains',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    /** Lower-cased email domain, e.g. "bigcorp.com". Globally unique. */
+    domain: varchar('domain', { length: 255 }).notNull(),
+    /** True once the tenant proves it owns the domain (DNS/TXT, etc.). */
+    verified: timestamp('verified_at', { withTimezone: true }),
+    /** When true (and verified), new signups on this domain auto-join the tenant. */
+    allowAutoJoin: boolean('allow_auto_join').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    domainIdx: uniqueIndex('uq_tenant_domains_domain').on(t.domain),
+    tenantIdx: index('ix_tenant_domains_tenant').on(t.tenantId),
   }),
 );
 

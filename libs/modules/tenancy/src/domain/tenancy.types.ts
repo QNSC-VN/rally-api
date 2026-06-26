@@ -140,3 +140,39 @@ export interface UpdateWorkspaceSettingsInput {
   defaultLocale?: string;
   dateFormat?: string;
 }
+
+export interface CreateTenantInput {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+export interface TenantDomain {
+  id: string;
+  tenantId: string;
+  domain: string;
+  verified: Date | null;
+  allowAutoJoin: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateTenantDomainInput {
+  id: string;
+  tenantId: string;
+  domain: string;
+  verified?: Date | null;
+  allowAutoJoin?: boolean;
+}
+
+/** Result of provisioning a brand-new tenant via self-serve signup. */
+export interface ProvisionedTenant {
+  tenant: Tenant;
+  workspace: Workspace;
+}
+
+/** Target tenant/workspace a signup should join (existing claimed domain). */
+export interface AutoJoinTarget {
+  tenantId: string;
+  workspaceId: string;
+}
