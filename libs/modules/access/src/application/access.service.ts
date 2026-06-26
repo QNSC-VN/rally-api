@@ -107,6 +107,39 @@ export class AccessService {
    * Workspace-scoped assignments take precedence over tenant/project scope.
    * Falls back to 'workspace_member' defaults when the user has no assignments.
    */
+  /**
+   * Ensures a JIT-provisioned user has at least the default workspace role.
+   * Called after SSO creates a new user — no actor needed (system operation).
+   * Idempotent: does nothing if the user already has an assignment.
+   */
+  async ensureDefaultRole(
+    userId: string,
+    tenantId: string,
+    defaultRoleSlug = 'project_member',
+  ): Promise<void> {
+    const existing = await this.assignmentRepo.listForUser(tenantId, userId)
+    if (existing.length > 0) return // already has a role
+
+    const roles = await this.roleRepo.listForTenant(tenantId)
+    const defaultRole = roles.find((r) => r.slug === defaultRoleSlug) ?? roles.find((r) => r.slug === 'workspace_member')
+    if (!defaultRole) {
+      this.logger.warn({ userId, tenantId }, 'No default role found for JIT-provisioned user')
+      return
+    }
+
+    const input: AssignRoleInput = {
+      id: uuidv7(),
+      tenantId,
+      userId,
+      roleId: defaultRole.id,
+      scopeType: 'workspace',
+      scopeId: undefined,
+      grantedBy: userId, // self-assigned by system on JIT provision
+    }
+    await this.assignmentRepo.create(input)
+    this.logger.log({ userId, roleSlug: defaultRole.slug }, 'Default role assigned to JIT-provisioned SSO user')
+  }
+
   async getUserRoleAndPermissions(
     userId: string,
     tenantId: string,

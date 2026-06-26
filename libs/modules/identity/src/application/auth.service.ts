@@ -329,6 +329,10 @@ export class AuthService {
           'entra', oid, email, displayName, defaultRallyTenantId,
         );
       }
+
+      // Auto-assign default workspace role to newly JIT-provisioned SSO users
+      // so they can access work items without a manual admin step.
+      await this.accessService.ensureDefaultRole(user.id, user.tenantId)
     }
 
     const sessionId = uuidv7();
