@@ -117,6 +117,12 @@ export class TenancyService {
    * auto-join-enabled domain claim. Returns null when no such claim exists, in
    * which case the caller provisions a fresh tenant instead.
    */
+  /** Returns true if the domain is already claimed by any tenant (auto-join or not). */
+  async isDomainClaimed(domain: string): Promise<boolean> {
+    const claim = await this.tenantDomainRepo.findByDomain(domain.toLowerCase());
+    return claim !== null;
+  }
+
   async findAutoJoinTarget(domain: string): Promise<AutoJoinTarget | null> {
     const claim = await this.tenantDomainRepo.findByDomain(domain.toLowerCase());
     if (!claim || !claim.verified || !claim.allowAutoJoin) return null;

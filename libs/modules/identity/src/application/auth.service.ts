@@ -206,7 +206,12 @@ export class AuthService {
       const orgName =
         input.organizationName?.trim() || this.defaultOrgName(input.displayName, email);
       // Only claim corporate domains — never public providers (gmail, etc.).
-      const claimDomain = AuthService.isPublicEmailDomain(domain) ? null : domain;
+      // Also skip if the domain is already owned by another tenant (avoid unique constraint crash).
+      const alreadyClaimed =
+        !AuthService.isPublicEmailDomain(domain) &&
+        (await this.tenancyService.isDomainClaimed(domain));
+      const claimDomain =
+        AuthService.isPublicEmailDomain(domain) || alreadyClaimed ? null : domain;
       const { tenant, workspace } = await this.tenancyService.provisionTenant(orgName, claimDomain);
       tenantId = tenant.id;
       workspaceId = workspace.id;
