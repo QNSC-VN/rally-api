@@ -28,7 +28,6 @@ const REFRESH_COOKIE = 'refresh_token';
 
 const COOKIE_BASE = {
   httpOnly: true,
-  sameSite: 'lax',
   path: '/v1/auth',
 } as const;
 
@@ -39,6 +38,35 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly accessService: AccessService,
   ) {}
+
+  private buildRefreshCookieOptions(req: FastifyRequest, maxAge: number) {
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    const isSecureRequest =
+      req.protocol === 'https' ||
+      (typeof forwardedProto === 'string' &&
+        forwardedProto.split(',').some((v) => v.trim() === 'https'));
+
+    const originHeader = req.headers.origin;
+    let isCrossSite = false;
+
+    if (typeof originHeader === 'string' && req.headers.host) {
+      try {
+        isCrossSite = new URL(originHeader).host !== req.headers.host;
+      } catch {
+        isCrossSite = false;
+      }
+    }
+
+    const sameSite = isCrossSite ? 'none' : 'lax';
+    const secure = isSecureRequest || sameSite === 'none';
+
+    return {
+      ...COOKIE_BASE,
+      sameSite,
+      secure,
+      maxAge,
+    } as const;
+  }
 
   // ── POST /auth/login ───────────────────────────────────────────────────────
 
@@ -58,11 +86,11 @@ export class AuthController {
 
     // Cookie TTL mirrors the session TTL: 30d if remembered, 24h otherwise
     const cookieMaxAge = dto.rememberMe ? 30 * 24 * 60 * 60 : 24 * 60 * 60;
-    reply.setCookie(REFRESH_COOKIE, result.refreshToken, {
-      ...COOKIE_BASE,
-      secure: process.env['NODE_ENV'] === 'production',
-      maxAge: cookieMaxAge,
-    });
+    reply.setCookie(
+      REFRESH_COOKIE,
+      result.refreshToken,
+      this.buildRefreshCookieOptions(req, cookieMaxAge),
+    );
 
     return {
       accessToken: result.accessToken,
@@ -87,11 +115,11 @@ export class AuthController {
   ): Promise<AuthTokenResponseDto> {
     const result = await this.authService.ssoLogin(dto.idToken, req.ip);
 
-    reply.setCookie(REFRESH_COOKIE, result.refreshToken, {
-      ...COOKIE_BASE,
-      secure: process.env['NODE_ENV'] === 'production',
-      maxAge: 30 * 24 * 60 * 60,
-    });
+    reply.setCookie(
+      REFRESH_COOKIE,
+      result.refreshToken,
+      this.buildRefreshCookieOptions(req, 30 * 24 * 60 * 60),
+    );
 
     return {
       accessToken: result.accessToken,
@@ -116,18 +144,21 @@ export class AuthController {
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<Omit<AuthTokenResponseDto, 'user'>> {
-    const token = (req.cookies as Record<string, string>)[REFRESH_COOKIE];
+    const token =
+      req.cookies && typeof req.cookies === 'object'
+        ? (req.cookies as Record<string, string | undefined>)[REFRESH_COOKIE]
+        : undefined;
     if (!token) {
       throw new UnauthorizedException('AUTH_TOKEN_INVALID', 'Refresh token missing');
     }
 
     const result = await this.authService.refresh(token, req.ip);
 
-    reply.setCookie(REFRESH_COOKIE, result.refreshToken, {
-      ...COOKIE_BASE,
-      secure: process.env['NODE_ENV'] === 'production',
-      maxAge: 30 * 24 * 60 * 60,
-    });
+    reply.setCookie(
+      REFRESH_COOKIE,
+      result.refreshToken,
+      this.buildRefreshCookieOptions(req, 30 * 24 * 60 * 60),
+    );
 
     return { accessToken: result.accessToken, expiresIn: result.expiresIn };
   }

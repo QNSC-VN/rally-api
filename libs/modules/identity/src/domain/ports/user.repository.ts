@@ -1,4 +1,4 @@
-import type { User, SsoIdentity, CreateUserInput } from '../user.types';
+import type { User, SsoIdentity } from '../user.types';
 import type { DbExecutor } from '@platform';
 
 export const USER_REPOSITORY = Symbol('USER_REPOSITORY');

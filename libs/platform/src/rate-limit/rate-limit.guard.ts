@@ -71,11 +71,25 @@ export class RateLimitGuard implements CanActivate {
     const key = `${tier}:${identifier}`;
 
     // ── Consume one token from the bucket ────────────────────────────────────
-    const { allowed, remaining, resetAt } = await this.valkey.consumeRateLimit(
-      key,
-      limit,
-      windowSeconds,
-    );
+    let allowed: boolean;
+    let remaining: number;
+    let resetAt: number;
+
+    try {
+      ({ allowed, remaining, resetAt } = await this.valkey.consumeRateLimit(
+        key,
+        limit,
+        windowSeconds,
+      ));
+    } catch (err) {
+      // Rate limiting is a protective control, not a hard dependency for serving
+      // traffic. If Valkey is unavailable, fail open and surface the outage via logs.
+      this.logger.error(
+        { err, key, tier, ip: req.ip, userId: req.user?.sub },
+        'Rate limit backend unavailable; allowing request',
+      );
+      return true;
+    }
 
     // Always set informational headers (clients can surface remaining budget)
     const setHeader = (name: string, value: string | number) =>
