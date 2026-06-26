@@ -190,4 +190,33 @@ export const tenantDomains = tenancySchema.table(
   }),
 );
 
+// ── tenant_members ────────────────────────────────────────────────────────────
+// The "keycard": a global user's membership in a tenant (the subscription /
+// billing boundary). This is the real-Rally identity model — a person exists
+// once in identity.users (global) and is ATTACHED to one or many tenants via
+// these rows, each carrying a status (and optional role). It replaces the old
+// users.tenant_id 1:1 ownership so a single email can belong to multiple
+// companies and switch between them at login.
+
+export const tenantMembers = tenancySchema.table(
+  'tenant_members',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    /** Optional tenant-level role; authoritative permissions live in access.* */
+    roleId: uuid('role_id'),
+    status: workspaceMemberStatusEnum('status').notNull().default('active'),
+    /** Drives "drop into your last-active tenant" at login when a user has many. */
+    lastActiveAt: timestamp('last_active_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqueMember: uniqueIndex('uq_tenant_member').on(t.tenantId, t.userId),
+    tenantIdx: index('ix_tenant_members_tenant').on(t.tenantId),
+    userIdx: index('ix_tenant_members_user').on(t.userId),
+  }),
+);
+
 import { sql } from 'drizzle-orm';
