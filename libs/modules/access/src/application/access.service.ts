@@ -115,7 +115,7 @@ export class AccessService {
   async ensureDefaultRole(
     userId: string,
     tenantId: string,
-    defaultRoleSlug = 'project_admin',
+    defaultRoleSlug = 'project_member',
   ): Promise<void> {
     const existing = await this.assignmentRepo.listForUser(tenantId, userId)
     if (existing.length > 0) return // already has a role
