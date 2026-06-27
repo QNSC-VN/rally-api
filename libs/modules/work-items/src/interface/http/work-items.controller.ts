@@ -11,7 +11,14 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors, ApiPagedResponse, buildPageArgs, RequirePermission, UseIdempotency } from '@platform';
+import {
+  Auth,
+  ApiCommonErrors,
+  ApiPagedResponse,
+  buildPageArgs,
+  RequirePermission,
+  UseIdempotency,
+} from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { WorkItemsService } from '../../application/work-items.service';
@@ -92,6 +99,7 @@ function toActivityDto(a: ActivityLog): ActivityResponseDto {
     id: a.id,
     createdAt: a.createdAt.toISOString(),
     actorId: a.actorId,
+    actorName: a.actorName,
     action: a.action,
     entityType: a.entityType,
     entityId: a.entityId,
@@ -121,7 +129,6 @@ function toWatcherDto(w: Watcher): WatcherResponseDto {
 }
 
 // ── Controller ────────────────────────────────────────────────────────────────
-
 
 function toAttachmentDto(a: Attachment): AttachmentResponseDto {
   return {
@@ -638,4 +645,3 @@ export class WorkItemsController {
     await this.workItemsService.deleteAttachment(user, id, aid);
   }
 }
-

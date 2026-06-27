@@ -3,6 +3,7 @@ import { and, desc, eq, count } from 'drizzle-orm';
 import { InjectDrizzle } from '@platform';
 import type { DrizzleDB, DbExecutor } from '@platform';
 import { activityLogs } from '../../../../../../db/schema/work';
+import { users } from '../../../../../../db/schema/identity';
 import type { ActivityLog, CreateActivityLogInput } from '../../domain/activity-log.types';
 import { IActivityLogRepository } from '../../domain/ports/activity-log.repository';
 
@@ -42,8 +43,22 @@ export class ActivityLogDrizzleRepository implements IActivityLogRepository {
 
     const [rows, totalRows] = await Promise.all([
       this.db
-        .select()
+        .select({
+          id: activityLogs.id,
+          tenantId: activityLogs.tenantId,
+          projectId: activityLogs.projectId,
+          workItemId: activityLogs.workItemId,
+          entityType: activityLogs.entityType,
+          entityId: activityLogs.entityId,
+          actorId: activityLogs.actorId,
+          actorName: users.displayName,
+          action: activityLogs.action,
+          changes: activityLogs.changes,
+          metadata: activityLogs.metadata,
+          createdAt: activityLogs.createdAt,
+        })
         .from(activityLogs)
+        .leftJoin(users, eq(activityLogs.actorId, users.id))
         .where(where)
         .orderBy(desc(activityLogs.createdAt))
         .limit(limit)

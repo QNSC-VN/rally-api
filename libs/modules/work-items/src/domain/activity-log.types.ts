@@ -54,6 +54,8 @@ export interface ActivityLog {
   entityType: string;
   entityId: string;
   actorId: string | null;
+  /** Resolved display name of the actor at query time (LEFT JOIN on users). */
+  actorName: string | null;
   action: string;
   changes: ActivityChange | null;
   metadata: Record<string, unknown>;

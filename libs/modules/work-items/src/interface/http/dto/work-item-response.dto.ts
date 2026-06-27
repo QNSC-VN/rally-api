@@ -56,6 +56,8 @@ export const ActivityResponseSchema = z.object({
   id: z.string().uuid(),
   createdAt: z.string().datetime(),
   actorId: z.string().uuid().nullable(),
+  /** Display name of the actor, resolved server-side. */
+  actorName: z.string().nullable(),
   action: z.string(),
   entityType: z.string(),
   entityId: z.string().uuid(),
@@ -120,4 +122,3 @@ export const DownloadUrlResponseSchema = z.object({
 });
 
 export class DownloadUrlResponseDto extends createZodDto(DownloadUrlResponseSchema) {}
-
