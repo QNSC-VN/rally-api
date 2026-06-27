@@ -25,7 +25,7 @@ updates:
       prefix: "deps"
       include: scope
     reviewers:
-      - nghiavt1802/backend-leads
+      - QNSC-VN/backend-leads
     ignore:
       # Major version bumps require manual review — too risky to auto-PR
       - dependency-name: "*"
@@ -49,7 +49,7 @@ updates:
     commit-message:
       prefix: "ci(deps)"
     reviewers:
-      - nghiavt1802/backend-leads
+      - QNSC-VN/backend-leads
 
   # ── Docker base images ──────────────────────────────────────────────────────
   - package-ecosystem: docker
@@ -66,4 +66,4 @@ updates:
     commit-message:
       prefix: "chore(docker)"
     reviewers:
-      - nghiavt1802/backend-leads
+      - QNSC-VN/backend-leads
