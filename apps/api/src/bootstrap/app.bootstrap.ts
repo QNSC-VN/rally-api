@@ -2,6 +2,7 @@ import { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import fastifyCookie from '@fastify/cookie';
+import fastifyCsrf from '@fastify/csrf-protection';
 import fastifyCompress from '@fastify/compress';
 import fastifyHelmet from '@fastify/helmet';
 import fastifyMultipart from '@fastify/multipart';
@@ -26,6 +27,11 @@ export async function bootstrapApp(app: NestFastifyApplication): Promise<void> {
 
   await app.register(fastifyCookie, {
     secret: config.get('CSRF_SECRET'),
+  });
+
+  await app.register(fastifyCsrf, {
+    sessionPlugin: '@fastify/cookie',
+    cookieOpts: { signed: true },
   });
 
   // Multipart / file upload — 10 MB limit per file

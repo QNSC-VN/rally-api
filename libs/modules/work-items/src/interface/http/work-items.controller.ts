@@ -18,6 +18,7 @@ import {
   buildPageArgs,
   RequirePermission,
   UseIdempotency,
+  RateLimit,
 } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
@@ -571,6 +572,7 @@ export class WorkItemsController {
   // ── Attachments ──────────────────────────────────────────────────────────
 
   @Post(':id/attachments/presign')
+  @RateLimit('STRICT')
   @ApiOperation({ summary: 'Get presigned S3 PUT URL to upload an attachment' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 201, type: PresignAttachmentResponseDto })

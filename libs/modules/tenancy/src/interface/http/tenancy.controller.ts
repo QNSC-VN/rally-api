@@ -27,6 +27,7 @@ import {
   UseIdempotency,
   RateLimit,
   RequirePermission,
+  NotFoundException,
 } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity/interface/http/decorators/current-user.decorator';
@@ -135,7 +136,12 @@ export class TenantController {
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, type: TenantResponseDto })
   @ApiCommonErrors(401, 403, 404)
-  async getTenant(@Param('id', ParseUUIDPipe) id: string): Promise<TenantResponseDto> {
+  async getTenant(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<TenantResponseDto> {
+    // Tenants are strictly owned — a user may only read their own tenant.
+    if (id !== user.tenantId) throw new NotFoundException('TENANT_NOT_FOUND', 'Tenant not found');
     const tenant = await this.tenancyService.getTenant(id);
     return toTenantDto(tenant);
   }

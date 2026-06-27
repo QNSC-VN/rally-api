@@ -11,7 +11,13 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors, ApiPagedResponse, buildPageArgs } from '@platform';
+import {
+  Auth,
+  ApiCommonErrors,
+  ApiPagedResponse,
+  buildPageArgs,
+  RequirePermission,
+} from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { ReleasesService } from '../../application/releases.service';
@@ -54,6 +60,7 @@ export class ReleasesController {
   }
 
   @Post()
+  @RequirePermission('release:manage')
   @ApiOperation({ summary: 'Create a release' })
   @ApiResponse({ status: 201, type: ReleaseResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
@@ -82,6 +89,7 @@ export class ReleasesController {
   }
 
   @Patch(':id')
+  @RequirePermission('release:manage')
   @ApiOperation({ summary: 'Update release details' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, type: ReleaseResponseDto })
@@ -97,6 +105,7 @@ export class ReleasesController {
 
   @Delete(':id')
   @HttpCode(204)
+  @RequirePermission('release:manage')
   @ApiOperation({ summary: 'Delete a planned release' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 204, description: 'Release deleted' })
@@ -109,6 +118,7 @@ export class ReleasesController {
   }
 
   @Post(':id/ship')
+  @RequirePermission('release:manage')
   @ApiOperation({ summary: 'Mark a release as shipped' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 201, type: ReleaseResponseDto })

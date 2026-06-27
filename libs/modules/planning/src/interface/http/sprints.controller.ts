@@ -11,7 +11,13 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors, ApiPagedResponse, buildPageArgs } from '@platform';
+import {
+  Auth,
+  ApiCommonErrors,
+  ApiPagedResponse,
+  buildPageArgs,
+  RequirePermission,
+} from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import { PlanningService } from '../../application/planning.service';
@@ -64,6 +70,7 @@ export class SprintsController {
   }
 
   @Post()
+  @RequirePermission('sprint:manage')
   @ApiOperation({ summary: 'Create a sprint' })
   @ApiResponse({ status: 201, type: SprintResponseDto })
   @ApiCommonErrors(400, 401, 404, 422)
@@ -93,6 +100,7 @@ export class SprintsController {
   }
 
   @Patch(':id')
+  @RequirePermission('sprint:manage')
   @ApiOperation({ summary: 'Update sprint details' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, type: SprintResponseDto })
@@ -108,6 +116,7 @@ export class SprintsController {
 
   @Delete(':id')
   @HttpCode(204)
+  @RequirePermission('sprint:manage')
   @ApiOperation({ summary: 'Delete a planned sprint' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 204, description: 'Sprint deleted' })
@@ -120,6 +129,7 @@ export class SprintsController {
   }
 
   @Post(':id/start')
+  @RequirePermission('sprint:manage')
   @ApiOperation({ summary: 'Start a sprint (planned → active)' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 201, type: SprintResponseDto })
@@ -133,6 +143,7 @@ export class SprintsController {
   }
 
   @Post(':id/complete')
+  @RequirePermission('sprint:manage')
   @ApiOperation({ summary: 'Complete a sprint (active → completed); moves unfinished items' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiCommonErrors(400, 401, 404)
