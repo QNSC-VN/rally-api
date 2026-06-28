@@ -64,3 +64,21 @@ export const WorkspaceSettingsResponseSchema = z.object({
 });
 
 export class WorkspaceSettingsResponseDto extends createZodDto(WorkspaceSettingsResponseSchema) {}
+
+export const MemberWithProfileResponseSchema = z.object({
+  id: z.string().uuid(),
+  workspaceId: z.string().uuid(),
+  userId: z.string().uuid(),
+  status: z.string(),
+  joinedAt: z.string().datetime(),
+  createdAt: z.string().datetime(),
+  displayName: z.string(),
+  email: z.string().email(),
+  avatarUrl: z.string().nullable(),
+  roleAssignmentId: z.string().uuid().nullable(),
+  roleId: z.string().uuid().nullable(),
+  roleSlug: z.string().nullable(),
+  roleName: z.string().nullable(),
+});
+
+export class MemberWithProfileResponseDto extends createZodDto(MemberWithProfileResponseSchema) {}

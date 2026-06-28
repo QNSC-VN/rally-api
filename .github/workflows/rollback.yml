@@ -41,8 +41,9 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  GITOPS_SHA: 947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
 
 jobs:
   rollback:
@@ -59,13 +60,13 @@ jobs:
       ENVIRONMENT: ${{ inputs.environment }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683   # v4.2.2
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: QNSC-VN/qnsc-gitops/actions/setup-aws-oidc@${{ env.GITOPS_SHA }}
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/rally-github-deploy-${{ inputs.environment }}
-          aws-region: ${{ env.AWS_REGION }}
+          role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/rally-github-deploy-${{ inputs.environment }}
+          region: ${{ env.AWS_REGION }}
 
       - name: Verify image tag exists in ECR
         run: |
@@ -150,22 +151,22 @@ jobs:
             --query 'service.serviceName' --output text
 
       - name: Wait for api service to stabilize
-        uses: nghiavan0610/qncs-gitops/actions/verify-ecs-deploy@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/verify-ecs-deploy@${{ env.GITOPS_SHA }}
         with:
           cluster: ${{ vars.ECS_CLUSTER }}
           service: ${{ vars.ECS_API_SERVICE }}
           image-tag: ${{ inputs.image_tag }}
           region: ${{ env.AWS_REGION }}
-          timeout-seconds: '600'
+          timeout-seconds: '300'
 
       - name: Wait for worker service to stabilize
-        uses: nghiavan0610/qncs-gitops/actions/verify-ecs-deploy@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/verify-ecs-deploy@${{ env.GITOPS_SHA }}
         with:
           cluster: ${{ vars.ECS_CLUSTER }}
           service: ${{ vars.ECS_WORKER_SERVICE }}
           image-tag: ${{ inputs.image_tag }}
           region: ${{ env.AWS_REGION }}
-          timeout-seconds: '600'
+          timeout-seconds: '300'
 
       - name: Rollback summary
         run: |

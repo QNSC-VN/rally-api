@@ -28,15 +28,27 @@ import {
   IWorkspaceSettingsRepository,
   WORKSPACE_SETTINGS_REPOSITORY,
 } from '../domain/ports/workspace-settings.repository';
+import {
+  ITenantDomainRepository,
+  TENANT_DOMAIN_REPOSITORY,
+} from '../domain/ports/tenant-domain.repository';
+import {
+  ITenantMemberRepository,
+  TENANT_MEMBER_REPOSITORY,
+} from '../domain/ports/tenant-member.repository';
 import type {
   Tenant,
   Workspace,
   WorkspaceMember,
+  WorkspaceMemberWithProfile,
   WorkspaceInvitation,
   WorkspaceSettings,
   UpdateWorkspaceInput,
   UpdateMemberInput,
   UpdateWorkspaceSettingsInput,
+  ProvisionedTenant,
+  AutoJoinTarget,
+  TenantMembership,
 } from '../domain/tenancy.types';
 
 @Injectable()
@@ -51,11 +63,130 @@ export class TenancyService {
     private readonly invitationRepo: IWorkspaceInvitationRepository,
     @Inject(WORKSPACE_SETTINGS_REPOSITORY)
     private readonly settingsRepo: IWorkspaceSettingsRepository,
+    @Inject(TENANT_DOMAIN_REPOSITORY)
+    private readonly tenantDomainRepo: ITenantDomainRepository,
+    @Inject(TENANT_MEMBER_REPOSITORY)
+    private readonly tenantMemberRepo: ITenantMemberRepository,
     private readonly config: AppConfigService,
     private readonly emailScheduler: EmailSchedulerService,
     private readonly uow: UnitOfWork,
     private readonly rls: TenantRlsService,
   ) {}
+
+  // ── Self-serve provisioning (signup) ─────────────────────────────────────────
+
+  /**
+   * Provision a brand-new tenant for self-serve signup: tenant + default
+   * workspace + trial subscription, all atomically. When a corporate email
+   * domain is supplied, an UNVERIFIED domain claim is recorded so an admin can
+   * later verify it and enable auto-join (the enterprise domain-capture seam).
+   */
+  @Span('tenancy.provisionTenant')
+  async provisionTenant(orgName: string, primaryDomain: string | null): Promise<ProvisionedTenant> {
+    const tenantId = uuidv7();
+    const slug = `${this.slugify(orgName)}-${randomBytes(3).toString('hex')}`.slice(0, 63);
+
+    // A brand-new tenant has no pre-existing request context, so we run the
+    // provisioning writes inside the NEW tenant's own RLS context — every row
+    // created here belongs to this tenant, satisfying the RLS policies.
+    return this.rls.withTenantContext(tenantId, async (tx) => {
+      const tenant = await this.tenantRepo.create({ id: tenantId, slug, name: orgName }, tx);
+
+      const workspace = await this.workspaceRepo.create(
+        { id: uuidv7(), tenantId: tenant.id, slug: 'main', name: orgName },
+        tx,
+      );
+
+      // Trial subscription — payment later flips this to active via billing webhook.
+      await this.tenantRepo.createSubscription(tenant.id, 'free', 'trialing', tx);
+
+      if (primaryDomain) {
+        await this.tenantDomainRepo.create(
+          { id: uuidv7(), tenantId: tenant.id, domain: primaryDomain, verified: null, allowAutoJoin: false },
+          tx,
+        );
+      }
+
+      this.logger.log({ tenantId: tenant.id, slug, primaryDomain }, 'Tenant provisioned via signup');
+      return { tenant, workspace };
+    });
+  }
+
+  /**
+   * Resolve the tenant/workspace a signup should auto-join based on a verified,
+   * auto-join-enabled domain claim. Returns null when no such claim exists, in
+   * which case the caller provisions a fresh tenant instead.
+   */
+  /** Returns true if the domain is already claimed by any tenant (auto-join or not). */
+  async isDomainClaimed(domain: string): Promise<boolean> {
+    const claim = await this.tenantDomainRepo.findByDomain(domain.toLowerCase());
+    return claim !== null;
+  }
+
+  async findAutoJoinTarget(domain: string): Promise<AutoJoinTarget | null> {
+    const claim = await this.tenantDomainRepo.findByDomain(domain.toLowerCase());
+    if (!claim || !claim.verified || !claim.allowAutoJoin) return null;
+
+    const workspaces = await this.workspaceRepo.listByTenant(claim.tenantId, {
+      limit: 1,
+      cursor: null,
+    });
+    const workspace = workspaces.data[0];
+    if (!workspace) return null;
+
+    return { tenantId: claim.tenantId, workspaceId: workspace.id };
+  }
+
+  /** Enroll a user as an active member of a workspace (used during signup). */
+  async enrollMember(
+    tenantId: string,
+    workspaceId: string,
+    userId: string,
+    roleId?: string,
+  ): Promise<void> {
+    // Ensure the tenant-level keycard exists first (idempotent — safe to call
+    // even if provisionTenant already inserted one for the founding user).
+    await this.tenantMemberRepo.create({ id: uuidv7(), tenantId, userId });
+    await this.memberRepo.addMember({ id: uuidv7(), tenantId, workspaceId, userId, roleId });
+  }
+
+  /**
+   * Return all active tenant memberships for a user, most-recently-active first.
+   * Used at login to resolve the active tenant and populate the switcher list.
+   */
+  async getMemberships(userId: string): Promise<TenantMembership[]> {
+    return this.tenantMemberRepo.findByUserId(userId);
+  }
+
+  /** Return a single tenant membership (keycard) for a user+tenant pair. */
+  async getTenantMember(userId: string, tenantId: string) {
+    return this.tenantMemberRepo.findByUserAndTenant(userId, tenantId);
+  }
+
+  /** Idempotently create a tenant_members keycard for a user. */
+  async tenantMemberCreate(id: string, tenantId: string, userId: string): Promise<void> {
+    await this.tenantMemberRepo.create({ id, tenantId, userId });
+  }
+
+  /**
+   * Stamp last_active_at on a user's keycard so that next login auto-selects
+   * the tenant they were most recently active in (Linear-style switcher).
+   */
+  async touchTenantMembership(userId: string, tenantId: string): Promise<void> {
+    await this.tenantMemberRepo.touchLastActive(userId, tenantId);
+  }
+
+  /** Slugify an org name into a URL-safe tenant slug fragment. */
+  private slugify(name: string): string {
+    return (
+      name
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40) || 'org'
+    );
+  }
 
   // ── Tenant ──────────────────────────────────────────────────────────────────
 
@@ -162,6 +293,14 @@ export class TenancyService {
   ): Promise<PagedResult<WorkspaceMember>> {
     await this.getWorkspace(tenantId, workspaceId);
     return this.memberRepo.listMembers(workspaceId, args);
+  }
+
+  async listMembersWithProfile(
+    tenantId: string,
+    workspaceId: string,
+  ): Promise<WorkspaceMemberWithProfile[]> {
+    await this.getWorkspace(tenantId, workspaceId);
+    return this.memberRepo.listMembersWithProfile(workspaceId);
   }
 
   @Span('tenancy.addMember')
@@ -366,6 +505,15 @@ export class TenancyService {
     // invitation be redeemed twice. Tenant context is the invitation's tenant,
     // which is the tenant of every row written here.
     await this.rls.withTenantContext(invitation.tenantId, async (tx) => {
+      // 1. Ensure the keycard exists — this is what fixes the "ghost member"
+      //    bug where a user from tenant A accepts an invite from tenant B.
+      //    Once this row exists, the updated RLS on identity.users lets tenant B
+      //    see their profile row through the membership-based policy.
+      await this.tenantMemberRepo.create(
+        { id: uuidv7(), tenantId: invitation.tenantId, userId: acceptingUserId },
+        tx,
+      );
+
       if (!existing) {
         await this.memberRepo.addMember(
           {

@@ -26,9 +26,11 @@ import {
   PageQueryDto,
   UseIdempotency,
   RateLimit,
+  RequirePermission,
+  NotFoundException,
 } from '@platform';
 import type { JwtPayload, PagedResult } from '@platform';
-import { CurrentUser } from '@modules/identity';
+import { CurrentUser } from '@modules/identity/interface/http/decorators/current-user.decorator';
 import { TenancyService } from '../../application/tenancy.service';
 import {
   CreateWorkspaceDto,
@@ -43,6 +45,7 @@ import {
   TenantResponseDto,
   WorkspaceResponseDto,
   MemberResponseDto,
+  MemberWithProfileResponseDto,
   InvitationResponseDto,
   WorkspaceSettingsResponseDto,
 } from './dto/tenancy-response.dto';
@@ -133,7 +136,12 @@ export class TenantController {
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, type: TenantResponseDto })
   @ApiCommonErrors(401, 403, 404)
-  async getTenant(@Param('id', ParseUUIDPipe) id: string): Promise<TenantResponseDto> {
+  async getTenant(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<TenantResponseDto> {
+    // Tenants are strictly owned — a user may only read their own tenant.
+    if (id !== user.tenantId) throw new NotFoundException('TENANT_NOT_FOUND', 'Tenant not found');
     const tenant = await this.tenancyService.getTenant(id);
     return toTenantDto(tenant);
   }
@@ -200,6 +208,7 @@ export class WorkspaceController {
   // ── Update workspace ───────────────────────────────────────────────────────
 
   @Patch(':id')
+  @RequirePermission('workspace:*')
   @ApiOperation({ summary: 'Update workspace' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, type: WorkspaceResponseDto })
@@ -217,6 +226,7 @@ export class WorkspaceController {
   // MVP constraint: workspace archival is system-only (COMPANY-FR-010).
 
   @Delete(':id')
+  @RequirePermission('workspace:*')
   @ApiExcludeEndpoint()
   @HttpCode(204)
   @ApiOperation({ summary: 'Delete workspace (soft delete)' })
@@ -247,9 +257,26 @@ export class WorkspaceController {
     return { data: page.data.map(toMemberDto), pageInfo: page.pageInfo };
   }
 
+  // ── List members with profile (for User Management UI) ─────────────────────
+
+  @Get(':id/members-with-profile')
+  @ApiOperation({ summary: 'List workspace members with user profile and role details' })
+  @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
+  @ApiResponse({ status: 200, type: MemberWithProfileResponseDto, isArray: true })
+  @ApiCommonErrors(401, 404)
+  async listMembersWithProfile(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<MemberWithProfileResponseDto[]> {
+    return this.tenancyService.listMembersWithProfile(user.tenantId, id) as unknown as Promise<
+      MemberWithProfileResponseDto[]
+    >;
+  }
+
   // ── Add member ─────────────────────────────────────────────────────────────
 
   @Post(':id/members')
+  @RequirePermission('workspace:manage_members')
   @ApiOperation({ summary: 'Add a user to the workspace' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 201, type: MemberResponseDto })
@@ -266,6 +293,7 @@ export class WorkspaceController {
   // ── Update member ──────────────────────────────────────────────────────────
 
   @Patch(':id/members/:memberId')
+  @RequirePermission('workspace:manage_members')
   @ApiOperation({ summary: 'Update member role or status' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'memberId', type: 'string', format: 'uuid' })
@@ -290,6 +318,7 @@ export class WorkspaceController {
   // ── Remove member ──────────────────────────────────────────────────────────
 
   @Delete(':id/members/:userId')
+  @RequirePermission('workspace:manage_members')
   @HttpCode(204)
   @ApiOperation({ summary: 'Remove a user from the workspace' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
@@ -307,6 +336,7 @@ export class WorkspaceController {
   // ── Invite member ──────────────────────────────────────────────────────────
 
   @Post(':id/invitations')
+  @RequirePermission('workspace:manage_members')
   @UseIdempotency()
   @RateLimit('STRICT')
   @ApiOperation({ summary: 'Invite a user to the workspace by email' })
@@ -346,6 +376,7 @@ export class WorkspaceController {
   // ── Cancel invitation ──────────────────────────────────────────────────────
 
   @Delete(':id/invitations/:invitationId')
+  @RequirePermission('workspace:manage_members')
   @HttpCode(204)
   @ApiOperation({ summary: 'Cancel a pending workspace invitation' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
@@ -376,6 +407,7 @@ export class WorkspaceController {
   }
 
   @Patch(':id/settings')
+  @RequirePermission('workspace:*')
   @ApiOperation({ summary: 'Update workspace settings' })
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, type: WorkspaceSettingsResponseDto })
@@ -400,6 +432,7 @@ export class InvitationController {
   constructor(private readonly tenancyService: TenancyService) {}
 
   @Post('accept')
+  @Auth()
   @HttpCode(204)
   @RateLimit('STRICT')
   @ApiOperation({ summary: 'Accept a workspace invitation (authenticated user only)' })

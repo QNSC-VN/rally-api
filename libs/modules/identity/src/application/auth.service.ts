@@ -9,21 +9,29 @@ import {
   ValkeyService,
   UnauthorizedException,
   NotFoundException,
+  ConflictException,
   PreconditionFailedException,
   Span,
   EmailSchedulerService,
   TenantRlsService,
   addHours,
   parseDurationToSeconds,
+  InjectDrizzle,
 } from '@platform';
-import type { JwtPayload } from '@platform';
+import type { JwtPayload, DrizzleDB } from '@platform';
 import { AccessService } from '@modules/access';
+import { TenancyService } from '@modules/tenancy';
+import type { TenantMembership } from '@modules/tenancy';
 import { AuditService } from '@modules/audit';
 import { IUserRepository, USER_REPOSITORY } from '../domain/ports/user.repository';
 import {
   IAuthSessionRepository,
   AUTH_SESSION_REPOSITORY,
 } from '../domain/ports/auth-session.repository';
+import {
+  ISsoConnectionRepository,
+  SSO_CONNECTION_REPOSITORY,
+} from '../domain/ports/sso-connection.repository';
 import type { User } from '../domain/user.types';
 
 export interface LoginResult {
@@ -31,6 +39,8 @@ export interface LoginResult {
   refreshToken: string;
   expiresIn: number;
   user: Pick<User, 'id' | 'email' | 'displayName' | 'avatarUrl' | 'locale' | 'timezone'>;
+  /** All active tenant memberships, most-recently-active first. Drives the tenant switcher. */
+  memberships: TenantMembership[];
 }
 
 export interface RefreshResult {
@@ -44,14 +54,17 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
+    @InjectDrizzle() private readonly db: DrizzleDB,
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     @Inject(AUTH_SESSION_REPOSITORY) private readonly sessionRepo: IAuthSessionRepository,
+    @Inject(SSO_CONNECTION_REPOSITORY) private readonly ssoConnectionRepo: ISsoConnectionRepository,
     private readonly jwt: JwtService,
     private readonly valkey: ValkeyService,
     private readonly config: AppConfigService,
     private readonly emailScheduler: EmailSchedulerService,
     private readonly rls: TenantRlsService,
     private readonly accessService: AccessService,
+    private readonly tenancyService: TenancyService,
     private readonly audit: AuditService,
   ) {}
 
@@ -90,8 +103,15 @@ export class AuthService {
     }
 
     const sessionId = uuidv7();
-    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, user.tenantId);
-    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions);
+    // Load keycards — pick the most-recently-active tenant.
+    const memberships = await this.tenancyService.getMemberships(user.id);
+    const activeTenantId = memberships[0]?.tenantId;
+    if (!activeTenantId) {
+      throw new UnauthorizedException('ACCOUNT_DEACTIVATED', 'No active tenant membership found');
+    }
+
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, activeTenantId);
+    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions, activeTenantId);
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
 
     // AUTH-FR: rememberMe = 30d session; not remembered = 24h session
@@ -99,11 +119,11 @@ export class AuthService {
     const refreshExpiry = new Date();
     refreshExpiry.setSeconds(refreshExpiry.getSeconds() + ttlSeconds);
 
-    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+    await this.rls.withTenantContext(activeTenantId, async (tx) => {
       await this.sessionRepo.create(
         {
           id: sessionId,
-          tenantId: user.tenantId,
+          tenantId: activeTenantId,
           userId: user.id,
           tokenHash,
           familyId,
@@ -117,9 +137,10 @@ export class AuthService {
 
     this.logger.log({ userId: user.id, jti, sessionId }, 'User logged in');
 
-    // Fire-and-forget audit trail (auth.login events are required for SOC 2 / ISO 27001)
+    // Fire-and-forget: touch last-active for the tenant switcher + audit trail
+    void this.tenancyService.touchTenantMembership(user.id, activeTenantId);
     void this.audit.record({
-      tenantId: user.tenantId,
+      tenantId: activeTenantId,
       actorId: user.id,
       actorEmail: user.email,
       action: 'auth.login',
@@ -141,7 +162,136 @@ export class AuthService {
         locale: user.locale,
         timezone: user.timezone,
       },
+      memberships,
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sign up (self-serve) — creates or joins a tenant by email domain
+  // ---------------------------------------------------------------------------
+
+  @Span('auth.signup')
+  async signup(
+    input: { email: string; password: string; displayName: string; organizationName?: string },
+    ipAddress?: string,
+  ): Promise<LoginResult> {
+    const email = input.email.toLowerCase().trim();
+    const domain = email.slice(email.lastIndexOf('@') + 1);
+
+    // Email is globally unique — one email maps to exactly one account/tenant.
+    const existing = await this.userRepo.findByEmail(email);
+    if (existing) {
+      throw new ConflictException(
+        'EMAIL_ALREADY_REGISTERED',
+        'An account with this email already exists',
+      );
+    }
+
+    const passwordHash = await AuthService.hashPassword(input.password);
+
+    // Domain-aware tenant resolution:
+    //   1. verified + auto-join domain → join that existing tenant as a member
+    //   2. otherwise                    → provision a NEW tenant; signer = admin
+    const autoJoin = await this.tenancyService.findAutoJoinTarget(domain);
+
+    let tenantId: string;
+    let workspaceId: string;
+    let roleSlug: string;
+
+    if (autoJoin) {
+      tenantId = autoJoin.tenantId;
+      workspaceId = autoJoin.workspaceId;
+      roleSlug = 'project_member';
+    } else {
+      const orgName =
+        input.organizationName?.trim() || this.defaultOrgName(input.displayName, email);
+      // Only claim corporate domains — never public providers (gmail, etc.).
+      // Also skip if the domain is already owned by another tenant (avoid unique constraint crash).
+      const alreadyClaimed =
+        !AuthService.isPublicEmailDomain(domain) &&
+        (await this.tenancyService.isDomainClaimed(domain));
+      const claimDomain =
+        AuthService.isPublicEmailDomain(domain) || alreadyClaimed ? null : domain;
+      const { tenant, workspace } = await this.tenancyService.provisionTenant(orgName, claimDomain);
+      tenantId = tenant.id;
+      workspaceId = workspace.id;
+      roleSlug = 'workspace_admin';
+    }
+
+    const user = await this.userRepo.create({
+      email,
+      displayName: input.displayName,
+      passwordHash,
+    });
+
+    // Enroll as workspace member + grant the resolved role.
+    await this.tenancyService.enrollMember(tenantId, workspaceId, user.id);
+    await this.accessService.ensureDefaultRole(user.id, tenantId, roleSlug);
+
+    // Issue a login session (mirrors login()).
+    const sessionId = uuidv7();
+    const memberships = await this.tenancyService.getMemberships(user.id);
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, tenantId);
+    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions, tenantId);
+    const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
+    const refreshExpiry = new Date();
+    refreshExpiry.setSeconds(refreshExpiry.getSeconds() + this.refreshTtlSeconds());
+
+    await this.rls.withTenantContext(tenantId, async (tx) => {
+      await this.sessionRepo.create(
+        { id: sessionId, tenantId, userId: user.id, tokenHash, familyId, ipAddress, expiresAt: refreshExpiry },
+        tx,
+      );
+      await this.userRepo.updateLastLogin(user.id, tx);
+    });
+
+    this.logger.log(
+      { userId: user.id, tenantId, jti, sessionId, mode: autoJoin ? 'join' : 'new-tenant' },
+      'User signed up',
+    );
+
+    void this.tenancyService.touchTenantMembership(user.id, tenantId);
+    void this.audit.record({
+      tenantId,
+      actorId: user.id,
+      actorEmail: user.email,
+      action: 'auth.signup',
+      resourceType: 'user',
+      resourceId: user.id,
+      ipAddress,
+      metadata: { mode: autoJoin ? 'join' : 'new-tenant' },
+    });
+
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn,
+      user: {
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+        locale: user.locale,
+        timezone: user.timezone,
+      },
+      memberships,
+    };
+  }
+
+  private defaultOrgName(displayName: string, email: string): string {
+    const first = displayName.trim().split(/\s+/)[0] || email.split('@')[0];
+    return `${first}'s Workspace`;
+  }
+
+  /** Common free/public email providers that must never be claimed as a tenant domain. */
+  private static readonly PUBLIC_EMAIL_DOMAINS = new Set([
+    'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com',
+    'yahoo.com', 'ymail.com', 'icloud.com', 'me.com', 'aol.com', 'proton.me',
+    'protonmail.com', 'gmx.com', 'mail.com', 'zoho.com', 'yandex.com', 'qq.com',
+  ]);
+
+  private static isPublicEmailDomain(domain: string): boolean {
+    return AuthService.PUBLIC_EMAIL_DOMAINS.has(domain.toLowerCase());
   }
 
   // ---------------------------------------------------------------------------
@@ -188,8 +338,8 @@ export class AuthService {
 
     // Revoke old session and issue new tokens (rotation)
     const newSessionId = uuidv7();
-    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, user.tenantId);
-    const { accessToken, expiresIn } = this.signAccessToken(user, newSessionId, permissions);
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, session.tenantId);
+    const { accessToken, expiresIn } = this.signAccessToken(user, newSessionId, permissions, session.tenantId);
     const { refreshToken: newRefreshToken, tokenHash: newHash } = this.generateRefreshToken();
 
     const refreshExpiry = new Date();
@@ -198,12 +348,12 @@ export class AuthService {
     // Atomic token rotation: revoke old session and issue new in one tx.
     // If either write fails the whole rotation rolls back, so we never end up
     // with two live refresh tokens (token-reuse / privilege-escalation gap).
-    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+    await this.rls.withTenantContext(session.tenantId, async (tx) => {
       await this.sessionRepo.revokeById(session.id, tx);
       await this.sessionRepo.create(
         {
           id: newSessionId,
-          tenantId: user.tenantId,
+          tenantId: session.tenantId,
           userId: user.id,
           tokenHash: newHash,
           familyId: session.familyId, // preserve family for revocation chain
@@ -288,60 +438,54 @@ export class AuthService {
             ? claims.upn
             : null;
     const displayName = typeof claims.name === 'string' ? claims.name : email ?? 'Unknown';
+    // Entra `tid` — the IdP directory id used to resolve the Rally tenant.
+    const externalTenantId = typeof claims.tid === 'string' ? claims.tid : null;
 
     if (!oid || !email) {
       throw new UnauthorizedException('SSO_CLAIMS_MISSING', 'Required OIDC claims (oid, email) are missing');
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
+
     // Look up existing SSO identity first (fast path — avoids tenant lookup)
     const existingIdentity = await this.userRepo.findSsoIdentity('entra', oid);
 
     let user: User;
+    let ssoTenantId: string;
     if (existingIdentity) {
       const found = await this.userRepo.findById(existingIdentity.userId);
       if (!found || found.deletedAt || found.status === 'suspended' || found.status === 'inactive') {
         throw new UnauthorizedException('USER_DEACTIVATED', 'Account is not active');
       }
       user = found;
-    } else {
-      // Determine target tenant: match by email domain or use the first active tenant
-      // For JIT provisioning, we look for an existing user by email first; if none,
-      // we need a target tenantId. The SSO endpoint accepts an optional `tenantSlug`
-      // hint; here we fall back to email-based lookup across all tenants.
-      const emailUser = await this.userRepo.findByEmail(email.toLowerCase().trim());
-      if (emailUser) {
-        // Account merge: link Entra identity to existing email/password user
-        user = await this.userRepo.upsertBySsoIdentity(
-          'entra', oid, email, displayName, emailUser.tenantId,
-        );
-      } else {
-        // True JIT provision — requires a tenantId from the Entra tenant configuration.
-        // The `tid` claim in the Entra token is the Entra tenant ID (not Rally tenant).
-        // Operators must pre-configure a Rally tenant ID mapping via ENTRA_DEFAULT_TENANT_ID.
-        const defaultRallyTenantId = this.config.get('ENTRA_DEFAULT_TENANT_ID' as never) as string | undefined;
-        if (!defaultRallyTenantId) {
-          throw new UnauthorizedException(
-            'SSO_TENANT_NOT_FOUND',
-            'No Rally tenant found for this SSO identity. Please contact your administrator.',
-          );
-        }
-        user = await this.userRepo.upsertBySsoIdentity(
-          'entra', oid, email, displayName, defaultRallyTenantId,
-        );
+      // Determine active tenant from memberships (most-recently-active first).
+      const membershipsEarly = await this.tenancyService.getMemberships(user.id);
+      ssoTenantId = membershipsEarly[0]?.tenantId ?? '';
+      if (!ssoTenantId) {
+        throw new UnauthorizedException('ACCOUNT_DEACTIVATED', 'No active tenant membership found');
       }
+    } else {
+      const provisioned = await this.resolveAndProvisionSsoUser({
+        oid,
+        email: normalizedEmail,
+        displayName,
+        externalTenantId,
+      });
+      user = provisioned.user;
+      ssoTenantId = provisioned.tenantId;
     }
 
     const sessionId = uuidv7();
-    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, user.tenantId);
-    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions);
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, ssoTenantId);
+    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions, ssoTenantId);
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
 
     const refreshExpiry = new Date();
     refreshExpiry.setSeconds(refreshExpiry.getSeconds() + this.refreshTtlSeconds());
 
-    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+    await this.rls.withTenantContext(ssoTenantId, async (tx) => {
       await this.sessionRepo.create(
-        { id: sessionId, tenantId: user.tenantId, userId: user.id, tokenHash, familyId, ipAddress, expiresAt: refreshExpiry },
+        { id: sessionId, tenantId: ssoTenantId, userId: user.id, tokenHash, familyId, ipAddress, expiresAt: refreshExpiry },
         tx,
       );
       await this.userRepo.updateLastLogin(user.id, tx);
@@ -350,7 +494,7 @@ export class AuthService {
     this.logger.log({ userId: user.id, jti, sessionId, provider: 'entra' }, 'User logged in via SSO');
 
     void this.audit.record({
-      tenantId: user.tenantId,
+      tenantId: ssoTenantId,
       actorId: user.id,
       actorEmail: user.email,
       action: 'auth.login.sso',
@@ -359,6 +503,9 @@ export class AuthService {
       ipAddress,
       metadata: { provider: 'entra', oid },
     });
+
+    const memberships = await this.tenancyService.getMemberships(user.id);
+    void this.tenancyService.touchTenantMembership(user.id, ssoTenantId);
 
     return {
       accessToken,
@@ -372,7 +519,104 @@ export class AuthService {
         locale: user.locale,
         timezone: user.timezone,
       },
+      memberships,
     };
+  }
+
+  /**
+   * Resolve which Rally tenant a federated (SSO) user belongs to and provision
+   * them if needed. This is the enterprise tenant-resolution chain, evaluated in
+   * priority order so that the most authoritative signal wins:
+   *
+   *   1. Existing user by email     → merge the Entra identity into their tenant.
+   *   2. SSO connection by Entra tid → provision into the mapped tenant, subject
+   *                                    to the connection's domain allow-list and
+   *                                    JIT toggle. This is the primary mechanism.
+   *   3. Dev-only env fallback       → ENTRA_DEFAULT_TENANT_ID, NON-production only.
+   *   4. Otherwise                   → 403; the user must be invited by an admin.
+   *
+   * The insecure "silently drop everyone into the default tenant" behaviour is
+   * gone: in production an unmapped IdP is rejected rather than leaking access.
+   */
+  private async resolveAndProvisionSsoUser(input: {
+    oid: string;
+    email: string;
+    displayName: string;
+    externalTenantId: string | null;
+  }): Promise<{ user: User; tenantId: string }> {
+    const { oid, email, displayName, externalTenantId } = input;
+
+    // Determine the Rally tenantId from the SSO connection first, so we always
+    // have an explicit tenant regardless of whether the user pre-exists.
+    let connectionTenantId: string | null = null;
+    let defaultRoleSlug: string | undefined;
+
+    if (externalTenantId) {
+      const connection = await this.ssoConnectionRepo.findByExternalTenantId('entra', externalTenantId);
+      if (connection) {
+        if (connection.status !== 'active') {
+          throw new UnauthorizedException(
+            'SSO_CONNECTION_DISABLED',
+            'SSO for your organization is disabled. Please contact your administrator.',
+          );
+        }
+        if (!this.isEmailDomainAllowed(email, connection.allowedEmailDomains)) {
+          throw new UnauthorizedException(
+            'SSO_DOMAIN_NOT_ALLOWED',
+            'Your email domain is not permitted to sign in to this organization.',
+          );
+        }
+        if (!connection.jitEnabled) {
+          throw new UnauthorizedException(
+            'SSO_JIT_DISABLED',
+            'Automatic account creation is disabled. Please ask your administrator for an invitation.',
+          );
+        }
+        connectionTenantId = connection.tenantId;
+        defaultRoleSlug = connection.defaultRoleSlug;
+      }
+    }
+
+    // Dev-only fallback — never trusted in production.
+    if (!connectionTenantId) {
+      const fallback = this.config.get('ENTRA_DEFAULT_TENANT_ID' as never) as string | undefined;
+      if (fallback && process.env['NODE_ENV'] !== 'production') {
+        this.logger.warn(
+          { email, externalTenantId },
+          'SSO user provisioned via ENTRA_DEFAULT_TENANT_ID dev fallback — configure an sso_connection for production',
+        );
+        connectionTenantId = fallback;
+      }
+    }
+
+    if (!connectionTenantId) {
+      throw new UnauthorizedException(
+        'SSO_NO_ACCESS',
+        'No Rally workspace is configured for your organization. Please ask your administrator for an invitation.',
+      );
+    }
+
+    const tenantId = connectionTenantId;
+
+    // Upsert the user + SSO identity link. tenant_id on sso_identities is set
+    // to the SSO connection's tenant. The users table no longer has tenant_id.
+    const user = await this.userRepo.upsertBySsoIdentity('entra', oid, email, displayName, tenantId);
+
+    // Ensure keycard exists for this user in the SSO connection's tenant.
+    await this.tenancyService.tenantMemberCreate(uuidv7(), tenantId, user.id);
+
+    if (defaultRoleSlug) {
+      await this.accessService.ensureDefaultRole(user.id, tenantId, defaultRoleSlug);
+    }
+
+    return { user, tenantId };
+  }
+
+  /** Returns true when the email's domain is permitted (empty list = any). */
+  private isEmailDomainAllowed(email: string, allowedDomains: string[]): boolean {
+    if (!allowedDomains || allowedDomains.length === 0) return true;
+    const domain = email.slice(email.lastIndexOf('@') + 1).toLowerCase();
+    return allowedDomains.some((d) => d.toLowerCase().trim() === domain);
   }
 
   // ---------------------------------------------------------------------------
@@ -445,6 +689,7 @@ export class AuthService {
     user: User,
     sessionId: string,
     permissions: string[],
+    tenantId: string,
   ): { accessToken: string; jti: string; expiresIn: number } {
     const jti = uuidv7();
     // Keep the client-facing expiresIn in lock-step with the JWT signing config
@@ -453,7 +698,7 @@ export class AuthService {
 
     const payload: Omit<JwtPayload, 'iat' | 'exp' | 'iss' | 'aud'> = {
       sub: user.id,
-      tenantId: user.tenantId,
+      tenantId,
       sessionId,
       jti,
       permissions,
@@ -540,7 +785,12 @@ export class AuthService {
     // A new forgot-password submit generates a new token → new hash → new key,
     // which is intentional (user requested a fresh token).
     const emailKey = this.hashToken(`password-reset:${tokenHash}`);
-    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+    const [firstMembership] = await this.tenancyService.getMemberships(user.id);
+    const pwResetTenantId = firstMembership?.tenantId;
+    if (!pwResetTenantId) {
+      throw new NotFoundException('USER_NOT_FOUND', 'User has no active tenant membership');
+    }
+    await this.rls.withTenantContext(pwResetTenantId, async (tx) => {
       await this.userRepo.createPasswordResetToken(user.id, tokenHash, expiresAt, tx);
       await this.emailScheduler.schedule(
         {
@@ -625,12 +875,84 @@ export class AuthService {
     // Atomic: update password, consume the token, and revoke every active
     // session together. A partial failure here would otherwise leave old
     // refresh tokens valid after a password reset (session-hijacking gap).
-    await this.rls.withTenantContext(user.tenantId, async (tx) => {
+    // Uses a superuser (RLS-bypassing) transaction so sessions are revoked
+    // across ALL tenants, not just the user's most-recent active tenant.
+    await this.db.transaction(async (tx) => {
       await this.userRepo.updatePasswordHash(record.userId, newHash, tx);
       await this.userRepo.markPasswordResetTokenUsed(record.id, tx);
       await this.sessionRepo.revokeAllForUser(record.userId, tx); // AUTH-FR-009
     });
 
     this.logger.log({ userId: record.userId }, 'Password reset successfully');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Switch tenant
+  // ---------------------------------------------------------------------------
+
+  @Span('auth.switchTenant')
+  async switchTenant(
+    payload: JwtPayload,
+    targetTenantId: string,
+    ipAddress?: string,
+  ): Promise<RefreshResult> {
+    // Verify the caller has an active keycard for the target tenant.
+    const keycard = await this.tenancyService.getTenantMember(payload.sub, targetTenantId);
+    if (!keycard || keycard.status !== 'active') {
+      throw new UnauthorizedException('TENANT_ACCESS_DENIED', 'You are not a member of this tenant');
+    }
+
+    const user = await this.userRepo.findById(payload.sub);
+    if (!user || user.deletedAt || user.status === 'suspended' || user.status === 'inactive') {
+      throw new UnauthorizedException('USER_DEACTIVATED', 'User not found or deactivated');
+    }
+
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, targetTenantId);
+
+    const newSessionId = uuidv7();
+    const { accessToken, jti, expiresIn } = this.signAccessToken(user, newSessionId, permissions, targetTenantId);
+    const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
+
+    const refreshExpiry = new Date();
+    refreshExpiry.setSeconds(refreshExpiry.getSeconds() + this.refreshTtlSeconds());
+
+    // Denylist old access token + revoke old session + create new session atomically.
+    const now = Math.floor(Date.now() / 1000);
+    const ttl = Math.max((payload.exp ?? 0) - now, 0);
+
+    await Promise.all([
+      ttl > 0 ? this.valkey.denylistToken(payload.jti, ttl) : Promise.resolve(),
+      this.rls.withTenantContext(targetTenantId, async (tx) => {
+        await this.sessionRepo.revokeById(payload.sessionId, tx);
+        await this.sessionRepo.create(
+          {
+            id: newSessionId,
+            tenantId: targetTenantId,
+            userId: user.id,
+            tokenHash,
+            familyId,
+            ipAddress,
+            expiresAt: refreshExpiry,
+          },
+          tx,
+        );
+      }),
+    ]);
+
+    this.logger.log({ userId: user.id, jti, sessionId: newSessionId, targetTenantId }, 'Tenant switched');
+
+    void this.tenancyService.touchTenantMembership(user.id, targetTenantId);
+    void this.audit.record({
+      tenantId: targetTenantId,
+      actorId: user.id,
+      actorEmail: user.email,
+      action: 'auth.switch_tenant',
+      resourceType: 'session',
+      resourceId: newSessionId,
+      ipAddress,
+      metadata: { fromTenantId: payload.tenantId, toTenantId: targetTenantId },
+    });
+
+    return { accessToken, refreshToken, expiresIn };
   }
 }

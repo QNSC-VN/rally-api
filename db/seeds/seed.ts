@@ -23,6 +23,7 @@ import * as schema from '../schema';
 // Direct imports to avoid barrel tsx/CJS resolution edge cases at runtime.
 import { projectCounters, projectMembers, workItems } from '../schema/work';
 import { userRoleAssignments } from '../schema/access';
+import { ssoConnections } from '../schema/identity';
 import { DEFAULT_WORKFLOW_STATUSES } from '../../libs/modules/projects/src/domain/project.constants';
 
 const url = process.env['DATABASE_URL'];
@@ -484,7 +485,8 @@ async function seed() {
     {
       slug: 'project_member',
       name: 'Project Member',
-      permissions: ['work_item:create', 'work_item:edit:own', 'work_item:view'],
+      // BA spec: Developer can update any work item (no "own-only" concept)
+      permissions: ['work_item:create', 'work_item:edit', 'work_item:view'],
     },
     { slug: 'project_viewer', name: 'Project Viewer', permissions: ['work_item:view'] },
     {
@@ -602,6 +604,28 @@ async function seed() {
 
   // ── Work items ────────────────────────────────────────────────────────────
   await seedWorkItems();
+
+  // ── SSO connection (dev) ──────────────────────────────────────────────────
+  // Maps the configured Entra directory (`ENTRA_TENANT_ID`) to the acme tenant
+  // so federated login resolves through the proper per-tenant SSO registry
+  // instead of the dev-only ENTRA_DEFAULT_TENANT_ID fallback.
+  const entraTid = process.env['ENTRA_TENANT_ID'];
+  if (entraTid) {
+    await db
+      .insert(ssoConnections)
+      .values({
+        tenantId: SYSTEM_TENANT_ID,
+        workspaceId: WORKSPACE_ID,
+        provider: 'entra',
+        externalTenantId: entraTid,
+        defaultRoleSlug: 'project_member',
+        allowedEmailDomains: [],
+        jitEnabled: true,
+        status: 'active',
+      })
+      .onConflictDoNothing();
+    console.log(`   ↳ SSO connection seeded for Entra tid ${entraTid} → acme tenant`);
+  }
 
   console.log(`✅  Seed complete — ${SEED_PROJECTS.length} projects, 3 users, work items seeded`);
 }

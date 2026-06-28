@@ -12,7 +12,7 @@ import {
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Auth, ApiCommonErrors } from '@platform';
 import type { JwtPayload } from '@platform';
-import { CurrentUser } from '@modules/identity';
+import { CurrentUser } from '@modules/identity/interface/http/decorators/current-user.decorator';
 import { TeamService } from '../../application/team.service';
 import { z } from 'zod';
 import { createZodDto } from 'nestjs-zod';
@@ -116,8 +116,8 @@ export class TeamController {
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, schema: { type: 'object' } })
   @ApiCommonErrors(401, 404)
-  async getTeam(@Param('id', ParseUUIDPipe) id: string) {
-    const team = await this.teamService.getTeam(id);
+  async getTeam(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string) {
+    const team = await this.teamService.getTeam(id, user.tenantId);
     return toTeamDto(team);
   }
 
@@ -126,8 +126,12 @@ export class TeamController {
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, schema: { type: 'object' } })
   @ApiCommonErrors(400, 401, 404, 422)
-  async updateTeam(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTeamDto) {
-    const team = await this.teamService.updateTeam(id, dto);
+  async updateTeam(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateTeamDto,
+  ) {
+    const team = await this.teamService.updateTeam(id, dto, user.tenantId);
     return toTeamDto(team);
   }
 
@@ -137,8 +141,8 @@ export class TeamController {
   @ApiParam({ name: 'id', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 200, schema: { type: 'array', items: { type: 'object' } } })
   @ApiCommonErrors(401, 404)
-  async listTeamMembers(@Param('id', ParseUUIDPipe) id: string) {
-    const members = await this.teamService.listTeamMembers(id);
+  async listTeamMembers(@CurrentUser() user: JwtPayload, @Param('id', ParseUUIDPipe) id: string) {
+    const members = await this.teamService.listTeamMembers(id, user.tenantId);
     return members.map(toTeamMemberDto);
   }
 
@@ -164,9 +168,10 @@ export class TeamController {
   @ApiResponse({ status: 204, description: 'Member removed' })
   @ApiCommonErrors(401, 404)
   async removeTeamMember(
+    @CurrentUser() user: JwtPayload,
     @Param('id', ParseUUIDPipe) id: string,
     @Param('userId', ParseUUIDPipe) userId: string,
   ) {
-    await this.teamService.removeTeamMember(id, userId);
+    await this.teamService.removeTeamMember(id, userId, user.tenantId);
   }
 }

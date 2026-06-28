@@ -20,6 +20,18 @@ const PASSWORD_RULES = z
   .regex(/[0-9]/, 'Password must contain at least one number')
   .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character');
 
+// ── Sign up (self-serve) ─────────────────────────────────────────────────────
+
+export const SignupSchema = z.object({
+  email: z.string().email('Must be a valid email address'),
+  password: PASSWORD_RULES,
+  displayName: z.string().min(1, 'Name is required').max(255).trim(),
+  /** Optional org name — used when this signup creates a brand-new tenant. */
+  organizationName: z.string().min(1).max(255).trim().optional(),
+});
+
+export class SignupDto extends createZodDto(SignupSchema) {}
+
 export const ChangePasswordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: PASSWORD_RULES,
@@ -63,3 +75,11 @@ export const SsoLoginSchema = z.object({
 });
 
 export class SsoLoginDto extends createZodDto(SsoLoginSchema) {}
+
+// ── Switch tenant ────────────────────────────────────────────────────────────
+
+export const SwitchTenantSchema = z.object({
+  tenantId: z.string().uuid('tenantId must be a valid UUID'),
+});
+
+export class SwitchTenantDto extends createZodDto(SwitchTenantSchema) {}

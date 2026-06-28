@@ -29,6 +29,29 @@ export class UserDrizzleRepository implements IUserRepository {
     return rows[0] ?? null;
   }
 
+  async create(
+    input: {
+      email: string;
+      displayName: string;
+      passwordHash: string;
+      emailVerified?: boolean;
+    },
+    tx?: DbExecutor,
+  ): Promise<User> {
+    const [row] = await (tx ?? this.db)
+      .insert(users)
+      .values({
+        id: uuidv7(),
+        email: input.email.toLowerCase().trim(),
+        displayName: input.displayName,
+        passwordHash: input.passwordHash,
+        status: 'active',
+        emailVerified: input.emailVerified ?? false,
+      })
+      .returning();
+    return row as User;
+  }
+
   async updateLastLogin(id: string, tx?: DbExecutor): Promise<void> {
     await (tx ?? this.db).update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, id));
   }
@@ -152,10 +175,10 @@ export class UserDrizzleRepository implements IUserRepository {
       .then((r) => r[0] ?? null);
 
     if (existingUser) {
-      // Link the SSO identity to the existing user
+      // Link the SSO identity to the existing user (tenantId = SSO connection's tenant)
       await executor.insert(ssoIdentities).values({
         id: uuidv7(),
-        tenantId: existingUser.tenantId,
+        tenantId,
         userId: existingUser.id,
         provider,
         providerSub,
@@ -170,7 +193,6 @@ export class UserDrizzleRepository implements IUserRepository {
       .insert(users)
       .values({
         id: userId,
-        tenantId,
         email: emailNormalized,
         displayName,
         status: 'active',

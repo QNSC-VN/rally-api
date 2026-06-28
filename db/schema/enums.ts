@@ -12,6 +12,12 @@ import { pgEnum } from 'drizzle-orm/pg-core';
 
 export const userStatusEnum = pgEnum('user_status', ['invited', 'active', 'inactive', 'suspended']);
 
+/** External SSO/IdP providers supported for federated login. */
+export const ssoProviderEnum = pgEnum('sso_provider', ['entra', 'saml', 'google', 'okta']);
+
+/** Lifecycle state of a tenant's SSO connection. */
+export const ssoConnectionStatusEnum = pgEnum('sso_connection_status', ['active', 'disabled']);
+
 // ── tenancy ────────────────────────────────────────────────────────────────
 
 export const tenantStatusEnum = pgEnum('tenant_status', ['active', 'suspended', 'deleted']);

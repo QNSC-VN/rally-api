@@ -49,7 +49,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     if (!idempotencyKey) return next.handle();
 
     const userId =
-      req.user?.id ??
+      req.user?.sub ??
       createHash('sha256')
         .update(`${req.ip ?? ''}:${(req.headers['user-agent'] as string | undefined) ?? ''}`)
         .digest('hex')

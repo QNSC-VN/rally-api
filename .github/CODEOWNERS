@@ -1,15 +1,15 @@
 # Default reviewers for all files
-*                                   @nghiavan0610
+*                                   @QNSC-VN
 
 # Authentication + security — needs security review
-apps/api/src/auth/                  @nghiavan0610
-libs/auth/                          @nghiavan0610
+apps/api/src/auth/                  @QNSC-VN
+libs/auth/                          @QNSC-VN
 
 # Database migrations — must be reviewed by a lead before merging
-db/migrations/                      @nghiavan0610
+db/migrations/                      @QNSC-VN
 
 # CI/CD and infra-adjacent workflows — devops must review
-.github/workflows/                  @nghiavan0610
+.github/workflows/                  @QNSC-VN
 
 # Shared platform config (env schema, global modules)
-libs/platform/                      @nghiavan0610
+libs/platform/                      @QNSC-VN

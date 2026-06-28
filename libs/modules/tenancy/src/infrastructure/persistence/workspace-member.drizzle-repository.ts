@@ -3,8 +3,11 @@ import { and, count, eq, lt } from 'drizzle-orm';
 import { InjectDrizzle, buildPageResult } from '@platform';
 import type { DrizzleDB, DbExecutor, CursorPayload, PagedResult } from '@platform';
 import { workspaceMembers } from '../../../../../../db/schema/tenancy';
+import { users } from '../../../../../../db/schema/identity';
+import { systemRoles, userRoleAssignments } from '../../../../../../db/schema/access';
 import type {
   WorkspaceMember,
+  WorkspaceMemberWithProfile,
   AddMemberInput,
   UpdateMemberInput,
 } from '../../domain/tenancy.types';
@@ -52,6 +55,54 @@ export class WorkspaceMemberDrizzleRepository implements IWorkspaceMemberReposit
       .limit(limit + 1);
 
     return buildPageResult(rows as WorkspaceMember[], limit, (m) => [m.joinedAt.toISOString()]);
+  }
+
+  /** Returns workspace members joined with user profile and current workspace-scope role. */
+  async listMembersWithProfile(workspaceId: string): Promise<WorkspaceMemberWithProfile[]> {
+    const rows = await this.db
+      .select({
+        id: workspaceMembers.id,
+        workspaceId: workspaceMembers.workspaceId,
+        userId: workspaceMembers.userId,
+        status: workspaceMembers.status,
+        joinedAt: workspaceMembers.joinedAt,
+        createdAt: workspaceMembers.createdAt,
+        displayName: users.displayName,
+        email: users.email,
+        avatarUrl: users.avatarUrl,
+        roleAssignmentId: userRoleAssignments.id,
+        roleId: userRoleAssignments.roleId,
+        roleSlug: systemRoles.slug,
+        roleName: systemRoles.name,
+      })
+      .from(workspaceMembers)
+      .leftJoin(users, eq(users.id, workspaceMembers.userId))
+      .leftJoin(
+        userRoleAssignments,
+        and(
+          eq(userRoleAssignments.userId, workspaceMembers.userId),
+          eq(userRoleAssignments.scopeType, 'workspace'),
+        ),
+      )
+      .leftJoin(systemRoles, eq(systemRoles.id, userRoleAssignments.roleId))
+      .where(eq(workspaceMembers.workspaceId, workspaceId))
+      .orderBy(workspaceMembers.joinedAt);
+
+    return rows.map((r) => ({
+      id: r.id,
+      workspaceId: r.workspaceId,
+      userId: r.userId,
+      status: r.status,
+      joinedAt: r.joinedAt ?? new Date(),
+      createdAt: r.createdAt,
+      displayName: r.displayName ?? r.email ?? r.userId,
+      email: r.email ?? '',
+      avatarUrl: r.avatarUrl ?? null,
+      roleAssignmentId: r.roleAssignmentId ?? null,
+      roleId: r.roleId ?? null,
+      roleSlug: r.roleSlug ?? null,
+      roleName: r.roleName ?? null,
+    }));
   }
 
   async addMember(input: AddMemberInput, tx?: DbExecutor): Promise<WorkspaceMember> {

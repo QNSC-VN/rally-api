@@ -13,13 +13,16 @@ import {
 import type { JwtPayload } from '@platform';
 import { AuthService } from '../../application/auth.service';
 import { AccessService } from '@modules/access';
+import { TenancyService } from '@modules/tenancy';
 import {
   LoginDto,
+  SignupDto,
   ChangePasswordDto,
   UpdateProfileDto,
   ForgotPasswordDto,
   ResetPasswordDto,
   SsoLoginDto,
+  SwitchTenantDto,
 } from './dto/login.dto';
 import { AuthTokenResponseDto, UserProfileResponseDto } from './dto/auth-response.dto';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -28,7 +31,6 @@ const REFRESH_COOKIE = 'refresh_token';
 
 const COOKIE_BASE = {
   httpOnly: true,
-  sameSite: 'lax',
   path: '/v1/auth',
 } as const;
 
@@ -38,7 +40,37 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly accessService: AccessService,
+    private readonly tenancyService: TenancyService,
   ) {}
+
+  private buildRefreshCookieOptions(req: FastifyRequest, maxAge: number) {
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    const isSecureRequest =
+      req.protocol === 'https' ||
+      (typeof forwardedProto === 'string' &&
+        forwardedProto.split(',').some((v) => v.trim() === 'https'));
+
+    const originHeader = req.headers.origin;
+    let isCrossSite = false;
+
+    if (typeof originHeader === 'string' && req.headers.host) {
+      try {
+        isCrossSite = new URL(originHeader).host !== req.headers.host;
+      } catch {
+        isCrossSite = false;
+      }
+    }
+
+    const sameSite = isCrossSite ? 'none' : 'lax';
+    const secure = isSecureRequest || sameSite === 'none';
+
+    return {
+      ...COOKIE_BASE,
+      sameSite,
+      secure,
+      maxAge,
+    } as const;
+  }
 
   // ── POST /auth/login ───────────────────────────────────────────────────────
 
@@ -58,16 +90,55 @@ export class AuthController {
 
     // Cookie TTL mirrors the session TTL: 30d if remembered, 24h otherwise
     const cookieMaxAge = dto.rememberMe ? 30 * 24 * 60 * 60 : 24 * 60 * 60;
-    reply.setCookie(REFRESH_COOKIE, result.refreshToken, {
-      ...COOKIE_BASE,
-      secure: process.env['NODE_ENV'] === 'production',
-      maxAge: cookieMaxAge,
-    });
+    reply.setCookie(
+      REFRESH_COOKIE,
+      result.refreshToken,
+      this.buildRefreshCookieOptions(req, cookieMaxAge),
+    );
 
     return {
       accessToken: result.accessToken,
       expiresIn: result.expiresIn,
       user: result.user,
+      memberships: result.memberships,
+    };
+  }
+
+  // ── POST /auth/signup ───────────────────────────────────────────────────────
+
+  @Post('signup')
+  @Public()
+  @RateLimit('AUTH_LOGIN')
+  @HttpCode(201)
+  @ApiOperation({ summary: 'Self-serve signup — create or join a tenant by email domain' })
+  @ApiResponse({ status: 201, type: AuthTokenResponseDto })
+  @ApiCommonErrors(400, 409, 422)
+  async signup(
+    @Body() dto: SignupDto,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<AuthTokenResponseDto> {
+    const result = await this.authService.signup(
+      {
+        email: dto.email,
+        password: dto.password,
+        displayName: dto.displayName,
+        organizationName: dto.organizationName,
+      },
+      req.ip,
+    );
+
+    reply.setCookie(
+      REFRESH_COOKIE,
+      result.refreshToken,
+      this.buildRefreshCookieOptions(req, 24 * 60 * 60),
+    );
+
+    return {
+      accessToken: result.accessToken,
+      expiresIn: result.expiresIn,
+      user: result.user,
+      memberships: result.memberships,
     };
   }
 
@@ -87,16 +158,17 @@ export class AuthController {
   ): Promise<AuthTokenResponseDto> {
     const result = await this.authService.ssoLogin(dto.idToken, req.ip);
 
-    reply.setCookie(REFRESH_COOKIE, result.refreshToken, {
-      ...COOKIE_BASE,
-      secure: process.env['NODE_ENV'] === 'production',
-      maxAge: 30 * 24 * 60 * 60,
-    });
+    reply.setCookie(
+      REFRESH_COOKIE,
+      result.refreshToken,
+      this.buildRefreshCookieOptions(req, 30 * 24 * 60 * 60),
+    );
 
     return {
       accessToken: result.accessToken,
       expiresIn: result.expiresIn,
       user: result.user,
+      memberships: result.memberships,
     };
   }
 
@@ -115,24 +187,56 @@ export class AuthController {
   async refresh(
     @Req() req: FastifyRequest,
     @Res({ passthrough: true }) reply: FastifyReply,
-  ): Promise<Omit<AuthTokenResponseDto, 'user'>> {
-    const token = (req.cookies as Record<string, string>)[REFRESH_COOKIE];
+  ): Promise<Omit<AuthTokenResponseDto, 'user' | 'memberships'>> {
+    const token =
+      req.cookies && typeof req.cookies === 'object'
+        ? (req.cookies as Record<string, string | undefined>)[REFRESH_COOKIE]
+        : undefined;
     if (!token) {
       throw new UnauthorizedException('AUTH_TOKEN_INVALID', 'Refresh token missing');
     }
 
     const result = await this.authService.refresh(token, req.ip);
 
-    reply.setCookie(REFRESH_COOKIE, result.refreshToken, {
-      ...COOKIE_BASE,
-      secure: process.env['NODE_ENV'] === 'production',
-      maxAge: 30 * 24 * 60 * 60,
-    });
+    reply.setCookie(
+      REFRESH_COOKIE,
+      result.refreshToken,
+      this.buildRefreshCookieOptions(req, 30 * 24 * 60 * 60),
+    );
 
     return { accessToken: result.accessToken, expiresIn: result.expiresIn };
   }
 
   // ── POST /auth/logout ──────────────────────────────────────────────────────
+
+  // ── POST /auth/switch-tenant ───────────────────────────────────────────────
+
+  @Post('switch-tenant')
+  @Auth()
+  @HttpCode(200)
+  @RateLimit('AUTH_REFRESH')
+  @ApiOperation({ summary: 'Switch active tenant and re-issue tokens' })
+  @ApiResponse({
+    status: 200,
+    schema: { properties: { accessToken: { type: 'string' }, expiresIn: { type: 'number' } } },
+  })
+  @ApiCommonErrors(401, 403)
+  async switchTenant(
+    @Body() dto: SwitchTenantDto,
+    @CurrentUser() user: JwtPayload,
+    @Req() req: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<Omit<AuthTokenResponseDto, 'user' | 'memberships'>> {
+    const result = await this.authService.switchTenant(user, dto.tenantId, req.ip);
+
+    reply.setCookie(
+      REFRESH_COOKIE,
+      result.refreshToken,
+      this.buildRefreshCookieOptions(req, 30 * 24 * 60 * 60),
+    );
+
+    return { accessToken: result.accessToken, expiresIn: result.expiresIn };
+  }
 
   @Post('logout')
   @Auth()
@@ -156,9 +260,10 @@ export class AuthController {
   @ApiResponse({ status: 200, type: UserProfileResponseDto })
   @ApiCommonErrors(401)
   async getMe(@CurrentUser() user: JwtPayload): Promise<UserProfileResponseDto> {
-    const [profile, { role, permissions }] = await Promise.all([
+    const [profile, { role, permissions }, memberships] = await Promise.all([
       this.authService.getMe(user.sub),
       this.accessService.getUserRoleAndPermissions(user.sub, user.tenantId),
+      this.tenancyService.getMemberships(user.sub),
     ]);
     return {
       id: profile.id,
@@ -172,6 +277,7 @@ export class AuthController {
       emailVerified: profile.emailVerified,
       createdAt: profile.createdAt.toISOString(),
       updatedAt: profile.updatedAt.toISOString(),
+      memberships,
     };
   }
 
@@ -186,9 +292,10 @@ export class AuthController {
     @CurrentUser() user: JwtPayload,
     @Body() dto: UpdateProfileDto,
   ): Promise<UserProfileResponseDto> {
-    const [profile, { role, permissions }] = await Promise.all([
+    const [profile, { role, permissions }, memberships] = await Promise.all([
       this.authService.updateProfile(user.sub, dto),
       this.accessService.getUserRoleAndPermissions(user.sub, user.tenantId),
+      this.tenancyService.getMemberships(user.sub),
     ]);
     return {
       id: profile.id,
@@ -202,6 +309,7 @@ export class AuthController {
       emailVerified: profile.emailVerified,
       createdAt: profile.createdAt.toISOString(),
       updatedAt: profile.updatedAt.toISOString(),
+      memberships,
     };
   }
 

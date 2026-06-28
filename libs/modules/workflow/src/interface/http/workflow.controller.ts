@@ -9,7 +9,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Auth, ApiCommonErrors } from '@platform';
+import { Auth, ApiCommonErrors, RequirePermission } from '@platform';
 import type { JwtPayload } from '@platform';
 import { CurrentUser } from '@modules/identity';
 import {
@@ -56,6 +56,7 @@ export class WorkflowController {
   // ── Statuses ───────────────────────────────────────────────────────────────
 
   @Post('statuses')
+  @RequirePermission('project:edit')
   @ApiOperation({ summary: 'Create a workflow status for a project' })
   @ApiParam({ name: 'projectId', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 201, type: WorkflowStatusResponseDto })
@@ -76,6 +77,7 @@ export class WorkflowController {
   }
 
   @Patch('statuses/reorder')
+  @RequirePermission('project:edit')
   @ApiOperation({ summary: 'Reorder workflow statuses' })
   @ApiParam({ name: 'projectId', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 204, description: 'Statuses reordered' })
@@ -91,6 +93,7 @@ export class WorkflowController {
 
   @Delete('statuses/:statusId')
   @HttpCode(204)
+  @RequirePermission('project:edit')
   @ApiOperation({ summary: 'Delete a workflow status' })
   @ApiParam({ name: 'projectId', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'statusId', type: 'string', format: 'uuid' })
@@ -107,6 +110,7 @@ export class WorkflowController {
   // ── Transitions ────────────────────────────────────────────────────────────
 
   @Post('transitions')
+  @RequirePermission('project:edit')
   @ApiOperation({ summary: 'Create a workflow transition rule' })
   @ApiParam({ name: 'projectId', type: 'string', format: 'uuid' })
   @ApiResponse({ status: 201, type: WorkflowTransitionResponseDto })
@@ -126,6 +130,7 @@ export class WorkflowController {
 
   @Delete('transitions/:transitionId')
   @HttpCode(204)
+  @RequirePermission('project:edit')
   @ApiOperation({ summary: 'Delete a workflow transition rule' })
   @ApiParam({ name: 'projectId', type: 'string', format: 'uuid' })
   @ApiParam({ name: 'transitionId', type: 'string', format: 'uuid' })

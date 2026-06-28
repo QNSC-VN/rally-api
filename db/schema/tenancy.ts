@@ -8,6 +8,7 @@ import {
   varchar,
   text,
   integer,
+  boolean,
   timestamp,
   jsonb,
   index,
@@ -156,6 +157,65 @@ export const subscriptions = tenancySchema.table(
   },
   (t) => ({
     tenantIdx: uniqueIndex('uq_subscriptions_tenant').on(t.tenantId),
+  }),
+);
+
+// ── tenant_domains ──────────────────────────────────────────────────────────
+// Email-domain claims that bind a company's domain to a tenant. This is the
+// enterprise "domain capture" mechanism that prevents tenant sprawl: once a
+// domain is verified AND auto-join is enabled, new signups with that email
+// domain join the existing tenant instead of creating a fragmented new one.
+//
+// A claim is created (unverified, auto-join off) the first time a tenant is
+// provisioned from a corporate email. An admin later verifies ownership and
+// opts in to auto-join.
+
+export const tenantDomains = tenancySchema.table(
+  'tenant_domains',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    /** Lower-cased email domain, e.g. "bigcorp.com". Globally unique. */
+    domain: varchar('domain', { length: 255 }).notNull(),
+    /** True once the tenant proves it owns the domain (DNS/TXT, etc.). */
+    verified: timestamp('verified_at', { withTimezone: true }),
+    /** When true (and verified), new signups on this domain auto-join the tenant. */
+    allowAutoJoin: boolean('allow_auto_join').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    domainIdx: uniqueIndex('uq_tenant_domains_domain').on(t.domain),
+    tenantIdx: index('ix_tenant_domains_tenant').on(t.tenantId),
+  }),
+);
+
+// ── tenant_members ────────────────────────────────────────────────────────────
+// The "keycard": a global user's membership in a tenant (the subscription /
+// billing boundary). This is the real-Rally identity model — a person exists
+// once in identity.users (global) and is ATTACHED to one or many tenants via
+// these rows, each carrying a status (and optional role). It replaces the old
+// users.tenant_id 1:1 ownership so a single email can belong to multiple
+// companies and switch between them at login.
+
+export const tenantMembers = tenancySchema.table(
+  'tenant_members',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    /** Optional tenant-level role; authoritative permissions live in access.* */
+    roleId: uuid('role_id'),
+    status: workspaceMemberStatusEnum('status').notNull().default('active'),
+    /** Drives "drop into your last-active tenant" at login when a user has many. */
+    lastActiveAt: timestamp('last_active_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqueMember: uniqueIndex('uq_tenant_member').on(t.tenantId, t.userId),
+    tenantIdx: index('ix_tenant_members_tenant').on(t.tenantId),
+    userIdx: index('ix_tenant_members_user').on(t.userId),
   }),
 );
 

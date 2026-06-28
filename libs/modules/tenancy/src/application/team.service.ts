@@ -58,16 +58,17 @@ export class TeamService {
     return team;
   }
 
-  async getTeam(id: string): Promise<Team> {
+  async getTeam(id: string, tenantId?: string): Promise<Team> {
     const team = await this.teamRepo.findById(id);
-    if (!team) {
+    // Return 404 for both "not found" and "wrong tenant" — avoids cross-tenant enumeration.
+    if (!team || (tenantId !== undefined && team.tenantId !== tenantId)) {
       throw new NotFoundException('TEAM_NOT_FOUND', 'Team not found');
     }
     return team;
   }
 
-  async updateTeam(id: string, input: UpdateTeamInput): Promise<Team> {
-    const team = await this.getTeam(id);
+  async updateTeam(id: string, input: UpdateTeamInput, tenantId?: string): Promise<Team> {
+    const team = await this.getTeam(id, tenantId);
 
     if (input.status === 'archived' && team.status === 'archived') {
       throw new ConflictException('TEAM_ALREADY_ARCHIVED', 'Team is already archived');
@@ -76,8 +77,8 @@ export class TeamService {
     return this.teamRepo.update(id, input);
   }
 
-  async listTeamMembers(teamId: string): Promise<TeamMember[]> {
-    await this.getTeam(teamId);
+  async listTeamMembers(teamId: string, tenantId?: string): Promise<TeamMember[]> {
+    await this.getTeam(teamId, tenantId);
     return this.teamMemberRepo.listByTeam(teamId);
   }
 
@@ -97,8 +98,8 @@ export class TeamService {
     return member;
   }
 
-  async removeTeamMember(teamId: string, userId: string): Promise<void> {
-    await this.getTeam(teamId);
+  async removeTeamMember(teamId: string, userId: string, tenantId?: string): Promise<void> {
+    await this.getTeam(teamId, tenantId);
 
     const existing = await this.teamMemberRepo.findMember(teamId, userId);
     if (!existing) {
