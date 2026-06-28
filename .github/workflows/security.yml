@@ -162,7 +162,7 @@ jobs:
           languages: javascript-typescript
           queries: security-and-quality
 
-      - uses: QNSC-VN/qnsc-gitops/actions/setup-node-pnpm@v1.0.0
+      - uses: QNSC-VN/qnsc-gitops/actions/setup-node-pnpm@v1
         with:
           node-version: ${{ env.NODE_VERSION }}
           pnpm-version: ${{ env.PNPM_VERSION }}
