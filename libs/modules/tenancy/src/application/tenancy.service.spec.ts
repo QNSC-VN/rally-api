@@ -14,6 +14,14 @@ import {
   WORKSPACE_SETTINGS_REPOSITORY,
   IWorkspaceSettingsRepository,
 } from '../domain/ports/workspace-settings.repository';
+import {
+  TENANT_DOMAIN_REPOSITORY,
+  ITenantDomainRepository,
+} from '../domain/ports/tenant-domain.repository';
+import {
+  TENANT_MEMBER_REPOSITORY,
+  ITenantMemberRepository,
+} from '../domain/ports/tenant-member.repository';
 import type {
   Tenant,
   Workspace,
@@ -154,6 +162,20 @@ const makeUow = () => ({
   run: vi.fn((fn: (tx: unknown) => unknown) => fn({})),
 });
 
+const makeTenantDomainRepo = (): jest.Mocked<ITenantDomainRepository> => ({
+  findByDomain: vi.fn().mockResolvedValue(null),
+  create: vi
+    .fn()
+    .mockResolvedValue({ id: 'domain-1', domain: 'example.com', tenantId: 'tenant-1' }),
+});
+
+const makeTenantMemberRepo = (): jest.Mocked<ITenantMemberRepository> => ({
+  findByUserId: vi.fn().mockResolvedValue([]),
+  findByUserAndTenant: vi.fn().mockResolvedValue(null),
+  create: vi.fn().mockResolvedValue(undefined),
+  touchLastActive: vi.fn().mockResolvedValue(undefined),
+});
+
 const makeRls = () => ({
   withTenantContext: vi.fn((_tenantId: string, fn: (tx: unknown) => unknown) => fn({})),
 });
@@ -167,6 +189,8 @@ describe('TenancyService', () => {
   let memberRepo: ReturnType<typeof makeMemberRepo>;
   let invitationRepo: ReturnType<typeof makeInvitationRepo>;
   let settingsRepo: ReturnType<typeof makeSettingsRepo>;
+  let tenantDomainRepo: ReturnType<typeof makeTenantDomainRepo>;
+  let tenantMemberRepo: ReturnType<typeof makeTenantMemberRepo>;
   let emailScheduler: ReturnType<typeof makeEmailScheduler>;
   let uow: ReturnType<typeof makeUow>;
   let rls: ReturnType<typeof makeRls>;
@@ -177,6 +201,8 @@ describe('TenancyService', () => {
     memberRepo = makeMemberRepo();
     invitationRepo = makeInvitationRepo();
     settingsRepo = makeSettingsRepo();
+    tenantDomainRepo = makeTenantDomainRepo();
+    tenantMemberRepo = makeTenantMemberRepo();
     emailScheduler = makeEmailScheduler();
     uow = makeUow();
     rls = makeRls();
@@ -189,6 +215,8 @@ describe('TenancyService', () => {
         { provide: WORKSPACE_MEMBER_REPOSITORY, useValue: memberRepo },
         { provide: WORKSPACE_INVITATION_REPOSITORY, useValue: invitationRepo },
         { provide: WORKSPACE_SETTINGS_REPOSITORY, useValue: settingsRepo },
+        { provide: TENANT_DOMAIN_REPOSITORY, useValue: tenantDomainRepo },
+        { provide: TENANT_MEMBER_REPOSITORY, useValue: tenantMemberRepo },
         { provide: AppConfigService, useValue: makeConfig() },
         { provide: EmailSchedulerService, useValue: emailScheduler },
         { provide: UnitOfWork, useValue: uow },

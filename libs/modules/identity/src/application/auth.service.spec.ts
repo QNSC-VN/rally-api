@@ -4,6 +4,7 @@ import * as argon2 from 'argon2';
 import { AuthService } from './auth.service';
 import { USER_REPOSITORY } from '../domain/ports/user.repository';
 import { AUTH_SESSION_REPOSITORY } from '../domain/ports/auth-session.repository';
+import { SSO_CONNECTION_REPOSITORY } from '../domain/ports/sso-connection.repository';
 import type { User, AuthSession } from '../domain/user.types';
 import {
   UnauthorizedException,
@@ -12,8 +13,10 @@ import {
   EmailSchedulerService,
   TenantRlsService,
 } from '@platform';
+import { DRIZZLE } from '@platform';
 import { ValkeyService } from '@platform';
 import { AccessService } from '@modules/access';
+import { TenancyService } from '@modules/tenancy';
 import { AuditService } from '@modules/audit';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -88,6 +91,8 @@ const makeConfig = (overrides: Record<string, unknown> = {}) => ({
       JWT_AUDIENCE: 'rally-app',
       PASSWORD_RESET_TOKEN_TTL_HOURS: 2,
       APP_BASE_URL: 'http://localhost:5173',
+      BREAKGLASS_EMAIL: 'breakglass@test.internal',
+      PLATFORM_ADMIN_EMAILS: '',
       ...overrides,
     };
     return defaults[key];
@@ -125,6 +130,41 @@ const makeAuditService = () => ({
   listAuditLogs: vi.fn().mockResolvedValue({ items: [], total: 0 }),
 });
 
+const makeSsoConnectionRepo = () => ({
+  findByExternalTenantId: vi.fn().mockResolvedValue(null),
+  findByTenantId: vi.fn().mockResolvedValue(null),
+  create: vi.fn().mockResolvedValue(undefined),
+  update: vi.fn().mockResolvedValue(undefined),
+});
+
+const makeTenancyService = () => ({
+  getMemberships: vi
+    .fn()
+    .mockResolvedValue([
+      {
+        tenantId: 'tenant-1',
+        tenantName: 'Test',
+        tenantSlug: 'test',
+        lastActiveAt: null,
+        roleSlug: 'workspace_admin',
+        roleName: 'Workspace Admin',
+      },
+    ]),
+  getTenantMember: vi.fn().mockResolvedValue({ status: 'active' }),
+  touchTenantMembership: vi.fn().mockResolvedValue(undefined),
+  tenantMemberCreate: vi.fn().mockResolvedValue(undefined),
+  enrollMember: vi.fn().mockResolvedValue(undefined),
+  findAutoJoinTarget: vi.fn().mockResolvedValue(null),
+  isDomainClaimed: vi.fn().mockResolvedValue(false),
+  provisionTenant: vi
+    .fn()
+    .mockResolvedValue({ tenant: { id: 'tenant-1' }, workspace: { id: 'ws-1' } }),
+});
+
+const makeDrizzle = () => ({
+  transaction: vi.fn((fn: (tx: unknown) => unknown) => fn({})),
+});
+
 // ── Test setup ───────────────────────────────────────────────────────────────
 
 describe('AuthService', () => {
@@ -153,14 +193,17 @@ describe('AuthService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
+        { provide: DRIZZLE, useValue: makeDrizzle() },
         { provide: USER_REPOSITORY, useValue: userRepo },
         { provide: AUTH_SESSION_REPOSITORY, useValue: sessionRepo },
+        { provide: SSO_CONNECTION_REPOSITORY, useValue: makeSsoConnectionRepo() },
         { provide: JwtService, useValue: jwt },
         { provide: ValkeyService, useValue: valkey },
         { provide: AppConfigService, useValue: config },
         { provide: EmailSchedulerService, useValue: emailScheduler },
         { provide: TenantRlsService, useValue: rls },
         { provide: AccessService, useValue: accessService },
+        { provide: TenancyService, useValue: makeTenancyService() },
         { provide: AuditService, useValue: auditService },
       ],
     }).compile();

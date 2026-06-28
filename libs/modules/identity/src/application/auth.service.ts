@@ -176,8 +176,7 @@ export class AuthService {
         ipAddress,
         metadata: { alert: 'BREAKGLASS_LOGIN', severity: 'critical' },
       });
-      const adminEmails = this.config
-        .get('PLATFORM_ADMIN_EMAILS')
+      const adminEmails = (this.config.get('PLATFORM_ADMIN_EMAILS') ?? '')
         .split(',')
         .map((e) => e.trim())
         .filter(Boolean);
@@ -585,8 +584,7 @@ export class AuthService {
 
     // Auto-elevate platform admins to workspace_admin on every SSO login.
     // Idempotent — ensureDefaultRole is a no-op if the role is already assigned.
-    const platformAdminEmails = this.config
-      .get('PLATFORM_ADMIN_EMAILS')
+    const platformAdminEmails = (this.config.get('PLATFORM_ADMIN_EMAILS') ?? '')
       .split(',')
       .map((e) => e.trim())
       .filter(Boolean);
