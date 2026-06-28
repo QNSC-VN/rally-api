@@ -38,7 +38,7 @@ jobs:
   #    Cheap, AWS-free, and a good fit for the shared gitops action.
   # ─────────────────────────────────────────────────────────────────────────
   secrets:
-    name: Secret scan (TruffleHog)
+    name: Secret scan (Gitleaks)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -49,16 +49,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      # TruffleHog OSS: open-source, no license required, scans full git history.
-      # Replaces gitleaks-action which requires a paid license for GitHub Org repos.
-      # --only-verified reports confirmed live secrets only (zero false positives).
-      - name: Scan for secrets
-        uses: trufflesecurity/trufflehog@v3.90.1
-        with:
-          path: ./
-          base: ""
-          head: HEAD
-          extra_args: --only-verified
+      # Gitleaks CLI (MIT licence — free for org repos).
+      # The paid licence applies only to the gitleaks/gitleaks-action wrapper,
+      # NOT to the CLI binary itself.  Running the CLI directly avoids the
+      # licence requirement while keeping pattern-based scanning that flags
+      # secrets regardless of whether they have been rotated (unlike --only-verified).
+      - name: Install Gitleaks
+        env:
+          GITLEAKS_VERSION: "8.21.2"
+        run: |
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Scan git history for secrets
+        run: gitleaks detect --source . --log-opts="--all" --no-banner --exit-code 1
 
   dependency-review:
     name: Dependency review
