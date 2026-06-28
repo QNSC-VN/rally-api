@@ -58,7 +58,7 @@ COPY package.json pnpm-lock.yaml ./
 
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm config set store-dir /root/.local/share/pnpm/store && \
-    HUSKY=0 pnpm install --frozen-lockfile --prod
+    pnpm install --frozen-lockfile --prod --ignore-scripts
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 3 │ builder
