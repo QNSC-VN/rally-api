@@ -7,13 +7,8 @@ import { Logger } from 'nestjs-pino';
 import { WorkerModule } from './worker.module';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(WorkerModule, { bufferLogs: true });
-
-  app.useLogger(app.get(Logger));
-  app.flushLogs();
-
-  // Worker has no HTTP listener — it consumes queues and runs cron
-  await app.init();
+  // createApplicationContext: no HTTP driver needed — worker is queue/cron only
+  const app = await NestFactory.createApplicationContext(WorkerModule);
 
   const logger = app.get(Logger);
   logger.log('Worker process started', 'Bootstrap');
