@@ -23,12 +23,17 @@ jobs:
       #   - Auto-expires — no long-lived secret rotation needed
       #   - Actions are audited under the app identity, not a personal account
       #
-      # Setup (one-time):
-      #   1. Create GitHub App at github.com/organizations/QNSC-VN/settings/apps/new
+      # Setup (one-time, org-level — reused by all QNSC repos):
+      #   1. Create GitHub App: github.com/organizations/QNSC-VN/settings/apps/new
+      #      Name: qnsc-automation
       #      Permissions: Contents (write), Pull requests (write), Metadata (read)
-      #   2. Install the app on this repo only
-      #   3. Add repo secret  : RELEASE_BOT_PRIVATE_KEY = <downloaded .pem contents>
-      #   4. Add repo variable: RELEASE_BOT_APP_ID      = <numeric App ID>
+      #      Webhooks: disabled
+      #   2. Install the app on specific repos as needed (not "All repositories")
+      #   3. Add ORG secret  : RELEASE_BOT_PRIVATE_KEY = <downloaded .pem contents>
+      #      github.com/organizations/QNSC-VN/settings/secrets/actions
+      #   4. Add ORG variable: RELEASE_BOT_APP_ID = <numeric App ID>
+      #      github.com/organizations/QNSC-VN/settings/variables/actions
+      #   Other repos that need release automation just use the same secret/var.
       - uses: actions/create-github-app-token@v2
         id: app-token
         with:
