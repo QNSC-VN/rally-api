@@ -11,7 +11,8 @@ try {
  * and sample projects that mirror the real business flow:
  *   project → counter → lead-as-project-member → workflow statuses
  *
- * Run: pnpm db:seed
+ * Run standalone : pnpm db:seed
+ * Called by      : db/migrate.ts when SEED_ON_DEPLOY=true (develop env only)
  * Idempotent — safe to run multiple times.
  */
 import { drizzle } from 'drizzle-orm/node-postgres';
@@ -26,22 +27,17 @@ import { userRoleAssignments } from '../schema/access';
 import { ssoConnections } from '../schema/identity';
 import { DEFAULT_WORKFLOW_STATUSES } from '../../libs/modules/projects/src/domain/project.constants';
 
-const url = process.env['DATABASE_URL'];
-if (!url) {
-  console.error('DATABASE_URL required');
-  process.exit(1);
-}
+// Assigned inside seed() before any helper function runs.
 
-const pool = new Pool({ connectionString: url, max: 1 });
-const db = drizzle(pool, { schema });
+let db: ReturnType<typeof drizzle<typeof schema>>;
 
+// Fixed UUIDs ensure idempotency — same rows on every seed run.
 const SYSTEM_TENANT_ID = '00000000-0000-7000-8000-000000000001';
 const ADMIN_USER_ID = '00000000-0000-7000-8000-000000000002';
 const WORKSPACE_ID = '00000000-0000-7000-8000-000000000003';
 const DEVELOPER_ID = '00000000-0000-7000-8000-000000000020';
 const VIEWER_ID = '00000000-0000-7000-8000-000000000021';
 
-// Fixed story IDs so tasks can reference them as parentId
 const NXP_STORY_1_ID = '00000000-0000-7000-8000-000000000030';
 const NXP_STORY_2_ID = '00000000-0000-7000-8000-000000000031';
 const MOB_STORY_1_ID = '00000000-0000-7000-8000-000000000032';
@@ -359,294 +355,310 @@ async function seedWorkItems() {
   console.log('✅  Work items seeded');
 }
 
-async function seed() {
-  console.log('Seeding...');
+/**
+ * Run all seed operations against the given database URL.
+ * Exported so db/migrate.ts can call it when SEED_ON_DEPLOY=true.
+ * Safe to call multiple times — all inserts use onConflictDoNothing.
+ */
+export async function seed(connectionUrl?: string): Promise<void> {
+  const url = connectionUrl ?? process.env['DATABASE_URL'];
+  if (!url) throw new Error('DATABASE_URL or connectionUrl required');
 
-  // ── Tenant ──────────────────────────────────────────────────────────────
-  await db
-    .insert(schema.tenants)
-    .values({
-      id: SYSTEM_TENANT_ID,
-      slug: 'acme',
-      name: 'Acme Corp (Dev Tenant)',
-      status: 'active',
-      plan: 'free',
-    })
-    .onConflictDoNothing();
+  const pool = new Pool({ connectionString: url, max: 1 });
+  db = drizzle(pool, { schema });
 
-  // ── Workspace ────────────────────────────────────────────────────────────
-  await db
-    .insert(schema.workspaces)
-    .values({
-      id: WORKSPACE_ID,
-      tenantId: SYSTEM_TENANT_ID,
-      slug: 'main',
-      name: 'ACME Corp',
-    })
-    .onConflictDoNothing();
+  try {
+    console.log('Seeding...');
 
-  // ── Admin user ───────────────────────────────────────────────────────────
-  // Break-glass credentials are injected via env — never hardcoded in git.
-  const breakglassEmail = process.env['BREAKGLASS_EMAIL'] ?? 'admin@acme.dev';
-  const breakglassPassword = process.env['BREAKGLASS_PASSWORD'] ?? 'Admin@Rally2026!';
-  const passwordHash = await argon2.hash(breakglassPassword, { type: argon2.argon2id });
-  await db
-    .insert(schema.users)
-    .values({
-      id: ADMIN_USER_ID,
-      email: breakglassEmail,
-      displayName: 'Admin User',
-      emailVerified: true,
-      locale: 'en',
-      timezone: 'Asia/Ho_Chi_Minh',
-      passwordHash,
-    })
-    .onConflictDoNothing();
+    // ── Tenant ──────────────────────────────────────────────────────────────
+    await db
+      .insert(schema.tenants)
+      .values({
+        id: SYSTEM_TENANT_ID,
+        slug: 'acme',
+        name: 'Acme Corp (Dev Tenant)',
+        status: 'active',
+        plan: 'free',
+      })
+      .onConflictDoNothing();
 
-  // ── Tenant member (global user → tenant link) ────────────────────────────
-  await db
-    .insert(schema.tenantMembers)
-    .values({ tenantId: SYSTEM_TENANT_ID, userId: ADMIN_USER_ID })
-    .onConflictDoNothing();
+    // ── Workspace ────────────────────────────────────────────────────────────
+    await db
+      .insert(schema.workspaces)
+      .values({
+        id: WORKSPACE_ID,
+        tenantId: SYSTEM_TENANT_ID,
+        slug: 'main',
+        name: 'ACME Corp',
+      })
+      .onConflictDoNothing();
 
-  // ── Workspace member ─────────────────────────────────────────────────────
-  await db
-    .insert(schema.workspaceMembers)
-    .values({
-      tenantId: SYSTEM_TENANT_ID,
-      workspaceId: WORKSPACE_ID,
-      userId: ADMIN_USER_ID,
-    })
-    .onConflictDoNothing();
-
-  // ── Additional users: developer + viewer ─────────────────────────────────
-  const devHash = await argon2.hash('Dev@Rally2026!', { type: argon2.argon2id });
-  const viewerHash = await argon2.hash('Viewer@Rally2026!', { type: argon2.argon2id });
-  await db
-    .insert(schema.users)
-    .values([
-      {
-        id: DEVELOPER_ID,
-        email: 'dev@acme.dev',
-        displayName: 'Alice Developer',
+    // ── Admin user ───────────────────────────────────────────────────────────
+    // Break-glass credentials are injected via env — never hardcoded in git.
+    const breakglassEmail = process.env['BREAKGLASS_EMAIL'] ?? 'admin@acme.dev';
+    const breakglassPassword = process.env['BREAKGLASS_PASSWORD'] ?? 'Admin@Rally2026!';
+    const passwordHash = await argon2.hash(breakglassPassword, { type: argon2.argon2id });
+    await db
+      .insert(schema.users)
+      .values({
+        id: ADMIN_USER_ID,
+        email: breakglassEmail,
+        displayName: 'Admin User',
         emailVerified: true,
         locale: 'en',
         timezone: 'Asia/Ho_Chi_Minh',
-        passwordHash: devHash,
-      },
-      {
-        id: VIEWER_ID,
-        email: 'viewer@acme.dev',
-        displayName: 'Bob Viewer',
-        emailVerified: true,
-        locale: 'en',
-        timezone: 'Asia/Ho_Chi_Minh',
-        passwordHash: viewerHash,
-      },
-    ])
-    .onConflictDoNothing();
-
-  await db
-    .insert(schema.tenantMembers)
-    .values([
-      { tenantId: SYSTEM_TENANT_ID, userId: DEVELOPER_ID },
-      { tenantId: SYSTEM_TENANT_ID, userId: VIEWER_ID },
-    ])
-    .onConflictDoNothing();
-
-  await db
-    .insert(schema.workspaceMembers)
-    .values([
-      { tenantId: SYSTEM_TENANT_ID, workspaceId: WORKSPACE_ID, userId: DEVELOPER_ID },
-      { tenantId: SYSTEM_TENANT_ID, workspaceId: WORKSPACE_ID, userId: VIEWER_ID },
-    ])
-    .onConflictDoNothing();
-
-  // ── System roles ─────────────────────────────────────────────────────────
-  const ROLES = [
-    {
-      slug: 'workspace_admin',
-      name: 'Workspace Admin',
-      permissions: [
-        'workspace:*',
-        'project:view',
-        'project:create',
-        'project:edit',
-        'project:archive',
-        'project:restore',
-        'project:delete',
-        'work_item:create',
-        'work_item:edit',
-        'work_item:delete',
-        'work_item:view',
-      ],
-    },
-    {
-      slug: 'project_admin',
-      name: 'Project Admin',
-      permissions: [
-        'project:view',
-        'project:create',
-        'project:edit',
-        'project:archive',
-        'project:restore',
-        'work_item:create',
-        'work_item:edit',
-        'work_item:delete',
-        'work_item:view',
-      ],
-    },
-    {
-      slug: 'project_member',
-      name: 'Project Member',
-      // BA spec: Developer can update any work item (no "own-only" concept)
-      permissions: ['work_item:create', 'work_item:edit', 'work_item:view'],
-    },
-    { slug: 'project_viewer', name: 'Project Viewer', permissions: ['work_item:view'] },
-    {
-      slug: 'workspace_member',
-      name: 'Workspace Member',
-      permissions: ['workspace:view', 'project:view'],
-    },
-    { slug: 'guest', name: 'Guest', permissions: ['work_item:view:public'] },
-  ];
-
-  for (const role of ROLES) {
-    await db
-      .insert(schema.systemRoles)
-      .values({
-        name: role.name,
-        slug: role.slug,
-        isSystem: true,
-        permissions: role.permissions,
-      })
-      .onConflictDoUpdate({
-        target: schema.systemRoles.slug,
-        set: { permissions: role.permissions, name: role.name },
-      });
-  }
-
-  // ── Admin user role assignment (workspace_admin for the default workspace) ──
-  const adminRoleRow = await db
-    .select({ id: schema.systemRoles.id })
-    .from(schema.systemRoles)
-    .where(eq(schema.systemRoles.slug, 'workspace_admin'))
-    .limit(1);
-
-  if (adminRoleRow[0]) {
-    await db
-      .insert(userRoleAssignments)
-      .values({
-        tenantId: SYSTEM_TENANT_ID,
-        userId: ADMIN_USER_ID,
-        roleId: adminRoleRow[0].id,
-        scopeType: 'workspace',
-        scopeId: WORKSPACE_ID,
-        grantedBy: ADMIN_USER_ID,
+        passwordHash,
       })
       .onConflictDoNothing();
-  }
 
-  // ── Developer role assignment (project_member) ────────────────────────────
-  const [memberRoleRow] = await db
-    .select({ id: schema.systemRoles.id })
-    .from(schema.systemRoles)
-    .where(eq(schema.systemRoles.slug, 'project_member'))
-    .limit(1);
-
-  if (memberRoleRow) {
+    // ── Tenant member (global user → tenant link) ────────────────────────────
     await db
-      .insert(userRoleAssignments)
-      .values({
-        tenantId: SYSTEM_TENANT_ID,
-        userId: DEVELOPER_ID,
-        roleId: memberRoleRow.id,
-        scopeType: 'workspace',
-        scopeId: WORKSPACE_ID,
-        grantedBy: ADMIN_USER_ID,
-      })
+      .insert(schema.tenantMembers)
+      .values({ tenantId: SYSTEM_TENANT_ID, userId: ADMIN_USER_ID })
       .onConflictDoNothing();
-  }
 
-  // ── Viewer role assignment (project_viewer) ───────────────────────────────
-  const [viewerRoleRow] = await db
-    .select({ id: schema.systemRoles.id })
-    .from(schema.systemRoles)
-    .where(eq(schema.systemRoles.slug, 'project_viewer'))
-    .limit(1);
-
-  if (viewerRoleRow) {
+    // ── Workspace member ─────────────────────────────────────────────────────
     await db
-      .insert(userRoleAssignments)
-      .values({
-        tenantId: SYSTEM_TENANT_ID,
-        userId: VIEWER_ID,
-        roleId: viewerRoleRow.id,
-        scopeType: 'workspace',
-        scopeId: WORKSPACE_ID,
-        grantedBy: ADMIN_USER_ID,
-      })
-      .onConflictDoNothing();
-  }
-
-  // ── Subscription ─────────────────────────────────────────────────────────
-  await db
-    .insert(schema.subscriptions)
-    .values({
-      tenantId: SYSTEM_TENANT_ID,
-      plan: 'free',
-      status: 'active',
-    })
-    .onConflictDoNothing();
-
-  // ── Projects (real business flow: project + counter + member + statuses) ──
-  for (const project of SEED_PROJECTS) {
-    await seedProject(project);
-  }
-
-  // ── Add developer as NXP project member (so seeded assigneeId is valid) ──
-  await db
-    .insert(projectMembers)
-    .values({
-      id: uuidv7(),
-      tenantId: SYSTEM_TENANT_ID,
-      projectId: SEED_PROJECTS[0].id, // NXP
-      userId: DEVELOPER_ID,
-      status: 'active',
-    })
-    .onConflictDoNothing();
-
-  // ── Work items ────────────────────────────────────────────────────────────
-  await seedWorkItems();
-
-  // ── SSO connection (dev) ──────────────────────────────────────────────────
-  // Maps the configured Entra directory (`ENTRA_TENANT_ID`) to the acme tenant
-  // so federated login resolves through the proper per-tenant SSO registry
-  // instead of the dev-only ENTRA_DEFAULT_TENANT_ID fallback.
-  const entraTid = process.env['ENTRA_TENANT_ID'];
-  if (entraTid) {
-    await db
-      .insert(ssoConnections)
+      .insert(schema.workspaceMembers)
       .values({
         tenantId: SYSTEM_TENANT_ID,
         workspaceId: WORKSPACE_ID,
-        provider: 'entra',
-        externalTenantId: entraTid,
-        defaultRoleSlug: 'project_member',
-        allowedEmailDomains: [],
-        jitEnabled: true,
+        userId: ADMIN_USER_ID,
+      })
+      .onConflictDoNothing();
+
+    // ── Additional users: developer + viewer ─────────────────────────────────
+    const devHash = await argon2.hash('Dev@Rally2026!', { type: argon2.argon2id });
+    const viewerHash = await argon2.hash('Viewer@Rally2026!', { type: argon2.argon2id });
+    await db
+      .insert(schema.users)
+      .values([
+        {
+          id: DEVELOPER_ID,
+          email: 'dev@acme.dev',
+          displayName: 'Alice Developer',
+          emailVerified: true,
+          locale: 'en',
+          timezone: 'Asia/Ho_Chi_Minh',
+          passwordHash: devHash,
+        },
+        {
+          id: VIEWER_ID,
+          email: 'viewer@acme.dev',
+          displayName: 'Bob Viewer',
+          emailVerified: true,
+          locale: 'en',
+          timezone: 'Asia/Ho_Chi_Minh',
+          passwordHash: viewerHash,
+        },
+      ])
+      .onConflictDoNothing();
+
+    await db
+      .insert(schema.tenantMembers)
+      .values([
+        { tenantId: SYSTEM_TENANT_ID, userId: DEVELOPER_ID },
+        { tenantId: SYSTEM_TENANT_ID, userId: VIEWER_ID },
+      ])
+      .onConflictDoNothing();
+
+    await db
+      .insert(schema.workspaceMembers)
+      .values([
+        { tenantId: SYSTEM_TENANT_ID, workspaceId: WORKSPACE_ID, userId: DEVELOPER_ID },
+        { tenantId: SYSTEM_TENANT_ID, workspaceId: WORKSPACE_ID, userId: VIEWER_ID },
+      ])
+      .onConflictDoNothing();
+
+    // ── System roles ─────────────────────────────────────────────────────────
+    const ROLES = [
+      {
+        slug: 'workspace_admin',
+        name: 'Workspace Admin',
+        permissions: [
+          'workspace:*',
+          'project:view',
+          'project:create',
+          'project:edit',
+          'project:archive',
+          'project:restore',
+          'project:delete',
+          'work_item:create',
+          'work_item:edit',
+          'work_item:delete',
+          'work_item:view',
+        ],
+      },
+      {
+        slug: 'project_admin',
+        name: 'Project Admin',
+        permissions: [
+          'project:view',
+          'project:create',
+          'project:edit',
+          'project:archive',
+          'project:restore',
+          'work_item:create',
+          'work_item:edit',
+          'work_item:delete',
+          'work_item:view',
+        ],
+      },
+      {
+        slug: 'project_member',
+        name: 'Project Member',
+        // BA spec: Developer can update any work item (no "own-only" concept)
+        permissions: ['work_item:create', 'work_item:edit', 'work_item:view'],
+      },
+      { slug: 'project_viewer', name: 'Project Viewer', permissions: ['work_item:view'] },
+      {
+        slug: 'workspace_member',
+        name: 'Workspace Member',
+        permissions: ['workspace:view', 'project:view'],
+      },
+      { slug: 'guest', name: 'Guest', permissions: ['work_item:view:public'] },
+    ];
+
+    for (const role of ROLES) {
+      await db
+        .insert(schema.systemRoles)
+        .values({
+          name: role.name,
+          slug: role.slug,
+          isSystem: true,
+          permissions: role.permissions,
+        })
+        .onConflictDoUpdate({
+          target: schema.systemRoles.slug,
+          set: { permissions: role.permissions, name: role.name },
+        });
+    }
+
+    // ── Admin user role assignment (workspace_admin for the default workspace) ──
+    const adminRoleRow = await db
+      .select({ id: schema.systemRoles.id })
+      .from(schema.systemRoles)
+      .where(eq(schema.systemRoles.slug, 'workspace_admin'))
+      .limit(1);
+
+    if (adminRoleRow[0]) {
+      await db
+        .insert(userRoleAssignments)
+        .values({
+          tenantId: SYSTEM_TENANT_ID,
+          userId: ADMIN_USER_ID,
+          roleId: adminRoleRow[0].id,
+          scopeType: 'workspace',
+          scopeId: WORKSPACE_ID,
+          grantedBy: ADMIN_USER_ID,
+        })
+        .onConflictDoNothing();
+    }
+
+    // ── Developer role assignment (project_member) ────────────────────────────
+    const [memberRoleRow] = await db
+      .select({ id: schema.systemRoles.id })
+      .from(schema.systemRoles)
+      .where(eq(schema.systemRoles.slug, 'project_member'))
+      .limit(1);
+
+    if (memberRoleRow) {
+      await db
+        .insert(userRoleAssignments)
+        .values({
+          tenantId: SYSTEM_TENANT_ID,
+          userId: DEVELOPER_ID,
+          roleId: memberRoleRow.id,
+          scopeType: 'workspace',
+          scopeId: WORKSPACE_ID,
+          grantedBy: ADMIN_USER_ID,
+        })
+        .onConflictDoNothing();
+    }
+
+    // ── Viewer role assignment (project_viewer) ───────────────────────────────
+    const [viewerRoleRow] = await db
+      .select({ id: schema.systemRoles.id })
+      .from(schema.systemRoles)
+      .where(eq(schema.systemRoles.slug, 'project_viewer'))
+      .limit(1);
+
+    if (viewerRoleRow) {
+      await db
+        .insert(userRoleAssignments)
+        .values({
+          tenantId: SYSTEM_TENANT_ID,
+          userId: VIEWER_ID,
+          roleId: viewerRoleRow.id,
+          scopeType: 'workspace',
+          scopeId: WORKSPACE_ID,
+          grantedBy: ADMIN_USER_ID,
+        })
+        .onConflictDoNothing();
+    }
+
+    // ── Subscription ─────────────────────────────────────────────────────────
+    await db
+      .insert(schema.subscriptions)
+      .values({
+        tenantId: SYSTEM_TENANT_ID,
+        plan: 'free',
         status: 'active',
       })
       .onConflictDoNothing();
-    console.log(`   ↳ SSO connection seeded for Entra tid ${entraTid} → acme tenant`);
-  }
 
-  console.log(`✅  Seed complete — ${SEED_PROJECTS.length} projects, 3 users, work items seeded`);
+    // ── Projects (real business flow: project + counter + member + statuses) ──
+    for (const project of SEED_PROJECTS) {
+      await seedProject(project);
+    }
+
+    // ── Add developer as NXP project member (so seeded assigneeId is valid) ──
+    await db
+      .insert(projectMembers)
+      .values({
+        id: uuidv7(),
+        tenantId: SYSTEM_TENANT_ID,
+        projectId: SEED_PROJECTS[0].id, // NXP
+        userId: DEVELOPER_ID,
+        status: 'active',
+      })
+      .onConflictDoNothing();
+
+    // ── Work items ────────────────────────────────────────────────────────────
+    await seedWorkItems();
+
+    // ── SSO connection (dev) ──────────────────────────────────────────────────
+    // Maps the configured Entra directory (`ENTRA_TENANT_ID`) to the acme tenant
+    // so federated login resolves through the proper per-tenant SSO registry
+    // instead of the dev-only ENTRA_DEFAULT_TENANT_ID fallback.
+    const entraTid = process.env['ENTRA_TENANT_ID'];
+    if (entraTid) {
+      await db
+        .insert(ssoConnections)
+        .values({
+          tenantId: SYSTEM_TENANT_ID,
+          workspaceId: WORKSPACE_ID,
+          provider: 'entra',
+          externalTenantId: entraTid,
+          defaultRoleSlug: 'project_member',
+          allowedEmailDomains: [],
+          jitEnabled: true,
+          status: 'active',
+        })
+        .onConflictDoNothing();
+      console.log(`   ↳ SSO connection seeded for Entra tid ${entraTid} → acme tenant`);
+    }
+
+    console.log(`✅  Seed complete — ${SEED_PROJECTS.length} projects, 3 users, work items seeded`);
+  } finally {
+    await pool.end();
+  }
 }
 
-seed()
-  .catch((e) => {
+// Run directly: pnpm db:seed
+if (process.argv[1]?.endsWith('seed.ts') || process.argv[1]?.endsWith('seed.js')) {
+  seed().catch((e) => {
     console.error(e);
     process.exit(1);
-  })
-  .finally(() => pool.end());
+  });
+}

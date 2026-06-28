@@ -121,6 +121,12 @@ export const EnvSchema = z.object({
    */
   BREAKGLASS_EMAIL: z.string().email().default('admin@acme.dev'),
   /**
+   * Password for the break-glass account. Inject via Secrets Manager in deployed
+   * environments — never hardcode. Not required at runtime (only the migrator/seed
+   * uses it), but validated here so a misconfigured deployment fails fast at startup.
+   */
+  BREAKGLASS_PASSWORD: z.string().min(12).optional(),
+  /**
    * Comma-separated SSO (Entra) emails auto-granted workspace_admin on first login.
    * Example: "nghiavt@qnsc.vn,quangld@qnsc.vn"
    */

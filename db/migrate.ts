@@ -14,6 +14,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 import path from 'path';
+import { seed } from './seeds/seed';
 
 const url = process.env['DATABASE_MIGRATION_URL'] ?? process.env['DATABASE_URL'];
 
@@ -30,6 +31,18 @@ async function run() {
     console.log('Running migrations...');
     await migrate(db, { migrationsFolder: path.join(__dirname, 'migrations') });
     console.log('✅  Migrations applied');
+
+    // In develop/staging, seed fixture data on every deploy so the breakglass
+    // account and dev tenant always exist with the configured credentials.
+    // Never set SEED_ON_DEPLOY=true in production — data is provisioned through
+    // normal tenant sign-up flows there.
+    if (process.env['SEED_ON_DEPLOY'] === 'true') {
+      console.log('SEED_ON_DEPLOY=true — running seed...');
+      // Seed uses DATABASE_URL (app role), not the migration URL (admin role).
+      // Falls back to migration URL if DATABASE_URL is not set separately.
+      const seedUrl = process.env['DATABASE_URL'] ?? url;
+      await seed(seedUrl);
+    }
   } catch (err) {
     console.error('❌  Migration failed', err);
     process.exit(1);
