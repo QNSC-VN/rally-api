@@ -41,7 +41,7 @@ permissions:
   contents: read
 
 env:
-  GITOPS_SHA: v1.0.0
+  GITOPS_SHA: v1.0.1
   AWS_REGION: ${{ vars.AWS_REGION }}
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
 
