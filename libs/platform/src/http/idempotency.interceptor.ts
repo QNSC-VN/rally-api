@@ -40,7 +40,9 @@ export class IdempotencyInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() !== 'http') return next.handle();
 
-    const req = context.switchToHttp().getRequest<FastifyRequest & { user?: { id?: string } }>();
+    const req = context
+      .switchToHttp()
+      .getRequest<FastifyRequest & { user?: { id?: string; sub?: string } }>();
 
     if (!IDEMPOTENCY_METHODS.has(req.method)) return next.handle();
 
