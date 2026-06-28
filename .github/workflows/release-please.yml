@@ -16,16 +16,29 @@ jobs:
       tag_name:        ${{ steps.release.outputs.tag_name }}
 
     steps:
-      # RELEASE_PLEASE_TOKEN: PAT with `repo` + `workflow` scopes.
-      # Required when the org/repo blocks Actions from creating PRs
-      # (Settings → Actions → General → "Allow GitHub Actions to create and
-      # approve pull requests" is disabled). Falls back to GITHUB_TOKEN when
-      # that setting is enabled.
-      # Add the PAT: Settings → Secrets → Actions → RELEASE_PLEASE_TOKEN
+      # Generate a short-lived token (1 h) from the rally-release-bot GitHub App.
+      # Enterprise rationale:
+      #   - Not tied to any human account (survives staff turnover)
+      #   - Scoped to this repo only with Contents + Pull-requests permissions
+      #   - Auto-expires — no long-lived secret rotation needed
+      #   - Actions are audited under the app identity, not a personal account
+      #
+      # Setup (one-time):
+      #   1. Create GitHub App at github.com/organizations/QNSC-VN/settings/apps/new
+      #      Permissions: Contents (write), Pull requests (write), Metadata (read)
+      #   2. Install the app on this repo only
+      #   3. Add repo secret  : RELEASE_BOT_PRIVATE_KEY = <downloaded .pem contents>
+      #   4. Add repo variable: RELEASE_BOT_APP_ID      = <numeric App ID>
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ vars.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN != '' && secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
   # ── Trigger deploy immediately after Release Please creates the tag ──────────
   # This avoids the user having to push the tag manually.
