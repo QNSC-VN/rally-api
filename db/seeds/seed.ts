@@ -391,7 +391,6 @@ async function seed() {
     .insert(schema.users)
     .values({
       id: ADMIN_USER_ID,
-      tenantId: SYSTEM_TENANT_ID,
       email: 'admin@acme.dev',
       displayName: 'Admin User',
       emailVerified: true,
@@ -399,6 +398,12 @@ async function seed() {
       timezone: 'Asia/Ho_Chi_Minh',
       passwordHash,
     })
+    .onConflictDoNothing();
+
+  // ── Tenant member (global user → tenant link) ────────────────────────────
+  await db
+    .insert(schema.tenantMembers)
+    .values({ tenantId: SYSTEM_TENANT_ID, userId: ADMIN_USER_ID })
     .onConflictDoNothing();
 
   // ── Workspace member ─────────────────────────────────────────────────────
@@ -419,7 +424,6 @@ async function seed() {
     .values([
       {
         id: DEVELOPER_ID,
-        tenantId: SYSTEM_TENANT_ID,
         email: 'dev@acme.dev',
         displayName: 'Alice Developer',
         emailVerified: true,
@@ -429,7 +433,6 @@ async function seed() {
       },
       {
         id: VIEWER_ID,
-        tenantId: SYSTEM_TENANT_ID,
         email: 'viewer@acme.dev',
         displayName: 'Bob Viewer',
         emailVerified: true,
@@ -437,6 +440,14 @@ async function seed() {
         timezone: 'Asia/Ho_Chi_Minh',
         passwordHash: viewerHash,
       },
+    ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(schema.tenantMembers)
+    .values([
+      { tenantId: SYSTEM_TENANT_ID, userId: DEVELOPER_ID },
+      { tenantId: SYSTEM_TENANT_ID, userId: VIEWER_ID },
     ])
     .onConflictDoNothing();
 
