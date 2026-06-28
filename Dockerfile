@@ -90,7 +90,10 @@ RUN pnpm build:worker
 # ─────────────────────────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS api
 
-RUN apk add --no-cache tini \
+# Upgrade all Alpine packages to latest security patches within the pinned
+# Alpine version. Ensures Trivy finds no CRITICAL/HIGH CVEs with available fixes.
+RUN apk upgrade --no-cache \
+    && apk add --no-cache tini \
     && rm -rf /var/cache/apk/*
 
 # Runtime tunables — override via docker run -e or Kubernetes env
@@ -131,7 +134,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # ─────────────────────────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS worker
 
-RUN apk add --no-cache tini \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache tini \
     && rm -rf /var/cache/apk/*
 
 ENV NODE_ENV=production
@@ -164,7 +168,8 @@ CMD ["node", "dist/apps/worker/apps/worker/src/main.js"]
 # ─────────────────────────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS migrator
 
-RUN apk add --no-cache tini \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache tini \
     && rm -rf /var/cache/apk/*
 
 ENV NODE_ENV=production

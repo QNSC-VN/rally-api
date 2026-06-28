@@ -262,14 +262,36 @@ jobs:
             --force-new-deployment \
             --region "${{ vars.AWS_REGION }}"
 
-      # ── Step 4: Verify API is running the expected image tag ──────────────
+      # ── Step 4: Wait for ECS service to stabilise, then verify image tag ────
+      # Uses `aws ecs wait services-stable` (DescribeServices only — no ListTasks
+      # needed) so this works within the deploy IAM role's existing permissions.
       - name: Verify API deployment
-        uses: QNSC-VN/qnsc-gitops/actions/verify-ecs-deploy@v1.0.5
-        with:
-          cluster: ${{ vars.ECS_CLUSTER }}
-          service: ${{ vars.ECS_API_SERVICE }}
-          image-tag: ${{ env.IMAGE_TAG }}
-          region: ${{ vars.AWS_REGION }}
+        run: |
+          echo "Waiting for ECS service to reach steady state…"
+          # aws ecs wait polls DescribeServices every 15 s, up to 40 attempts (10 min).
+          aws ecs wait services-stable \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --services "${{ vars.ECS_API_SERVICE }}" \
+            --region "${{ vars.AWS_REGION }}"
+          echo "✓ ECS service stable"
+
+          # Confirm the active task definition carries the expected image tag.
+          ACTIVE_TASKDEF=$(aws ecs describe-services \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --services "${{ vars.ECS_API_SERVICE }}" \
+            --region "${{ vars.AWS_REGION }}" \
+            --query 'services[0].taskDefinition' --output text)
+          ACTIVE_IMAGE=$(aws ecs describe-task-definition \
+            --task-definition "$ACTIVE_TASKDEF" \
+            --region "${{ vars.AWS_REGION }}" \
+            --query 'taskDefinition.containerDefinitions[0].image' --output text)
+          echo "Active task definition : $ACTIVE_TASKDEF"
+          echo "Active image           : $ACTIVE_IMAGE"
+          if ! echo "$ACTIVE_IMAGE" | grep -q "${{ env.IMAGE_TAG }}"; then
+            echo "ERROR: Expected image tag '${{ env.IMAGE_TAG }}' but active image is '$ACTIVE_IMAGE'"
+            exit 1
+          fi
+          echo "✓ Image tag verified: ${{ env.IMAGE_TAG }}"
 
       # ── Step 5: Health check — confirm the new version serves traffic ─────
       - name: Post-deploy health check

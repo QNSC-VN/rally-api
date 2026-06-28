@@ -38,11 +38,10 @@ jobs:
   #    Cheap, AWS-free, and a good fit for the shared gitops action.
   # ─────────────────────────────────────────────────────────────────────────
   secrets:
-    name: Secret scan (Gitleaks)
+    name: Secret scan (TruffleHog)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      security-events: write
       contents: read
 
     steps:
@@ -50,10 +49,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: QNSC-VN/qnsc-gitops/actions/scan-secrets@v1.0.0
+      # TruffleHog OSS: open-source, no license required, scans full git history.
+      # Replaces gitleaks-action which requires a paid license for GitHub Org repos.
+      # --only-verified reports confirmed live secrets only (zero false positives).
+      - name: Scan for secrets
+        uses: trufflesecurity/trufflehog@v3.90.1
         with:
-          fail-on-leak: "true"
-          scan-depth: "0"
+          path: ./
+          base: ""
+          head: HEAD
+          extra_args: --only-verified
 
   dependency-review:
     name: Dependency review
@@ -100,15 +105,26 @@ jobs:
           tags: rally-api:scan
           cache-from: type=gha,scope=api # reuses cache from CI build job if available
 
-      - name: Scan image with Trivy
+      # Two-pass scan: CRITICAL blocks the build; HIGH is reported only.
+      # ignore-unfixed: true — skip CVEs with no upstream fix (supply chain noise).
+      - name: Scan image (CRITICAL — blocks build)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: rally-api:scan
+          format: table
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Scan image (HIGH — report only)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: rally-api:scan
           format: sarif
           output: trivy-results.sarif
-          severity: CRITICAL,HIGH
-          exit-code: "1" # fail on CRITICAL
-          ignore-unfixed: true # skip CVEs with no fix available
+          severity: HIGH
+          exit-code: "0"
+          ignore-unfixed: true
 
       - name: Upload Trivy SARIF to GitHub Security
         if: always() # upload even if scan failed

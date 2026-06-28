@@ -16,12 +16,16 @@ jobs:
       tag_name:        ${{ steps.release.outputs.tag_name }}
 
     steps:
+      # RELEASE_PLEASE_TOKEN: PAT with `repo` + `workflow` scopes.
+      # Required when the org/repo blocks Actions from creating PRs
+      # (Settings → Actions → General → "Allow GitHub Actions to create and
+      # approve pull requests" is disabled). Falls back to GITHUB_TOKEN when
+      # that setting is enabled.
+      # Add the PAT: Settings → Secrets → Actions → RELEASE_PLEASE_TOKEN
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          # Uses release-please-config.json + .release-please-manifest.json
-          # in the repo root — no extra config needed here.
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN != '' && secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
   # ── Trigger deploy immediately after Release Please creates the tag ──────────
   # This avoids the user having to push the tag manually.
