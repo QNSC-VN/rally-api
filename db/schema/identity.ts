@@ -62,6 +62,8 @@ export const authSessions = identitySchema.table(
     isRevoked: boolean('is_revoked').notNull().default(false),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Set for SSO sessions — used to re-derive authMethod on token refresh. */
+    ssoProvider: varchar('sso_provider', { length: 32 }),
   },
   (t) => ({
     tenantIdx: index('ix_auth_sessions_tenant').on(t.tenantId),
@@ -128,7 +130,9 @@ export const ssoConnections = identitySchema.table(
     /** Full token issuer URL — optional secondary match key (SAML/OIDC). */
     issuer: varchar('issuer', { length: 512 }),
     /** System-role slug assigned to JIT-provisioned users (e.g. 'project_member'). */
-    defaultRoleSlug: varchar('default_role_slug', { length: 64 }).notNull().default('project_member'),
+    defaultRoleSlug: varchar('default_role_slug', { length: 64 })
+      .notNull()
+      .default('project_member'),
     /** Email domains permitted to provision via this connection. Empty = any. */
     allowedEmailDomains: jsonb('allowed_email_domains').$type<string[]>().notNull().default([]),
     /** When false, new users are NOT auto-created — they must be invited first. */

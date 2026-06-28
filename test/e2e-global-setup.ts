@@ -138,7 +138,6 @@ async function seedTestData(db: ReturnType<typeof drizzle>): Promise<void> {
     .values([
       {
         id: TEST_ADMIN_ID,
-        tenantId: TEST_TENANT_ID,
         email: TEST_ADMIN_EMAIL,
         displayName: 'E2E Admin',
         emailVerified: true,
@@ -148,7 +147,6 @@ async function seedTestData(db: ReturnType<typeof drizzle>): Promise<void> {
       },
       {
         id: TEST_VIEWER_ID,
-        tenantId: TEST_TENANT_ID,
         email: TEST_VIEWER_EMAIL,
         displayName: 'E2E Viewer',
         emailVerified: true,
@@ -156,6 +154,14 @@ async function seedTestData(db: ReturnType<typeof drizzle>): Promise<void> {
         timezone: 'UTC',
         passwordHash: viewerHash,
       },
+    ])
+    .onConflictDoNothing();
+
+  await db
+    .insert(schema.tenantMembers)
+    .values([
+      { tenantId: TEST_TENANT_ID, userId: TEST_ADMIN_ID },
+      { tenantId: TEST_TENANT_ID, userId: TEST_VIEWER_ID },
     ])
     .onConflictDoNothing();
 

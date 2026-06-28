@@ -46,6 +46,7 @@ const mockSession = (overrides: Partial<AuthSession> = {}): AuthSession => ({
   isRevoked: false,
   expiresAt: new Date(Date.now() + 60 * 60 * 1000),
   createdAt: new Date(),
+  ssoProvider: null,
   ...overrides,
 });
 

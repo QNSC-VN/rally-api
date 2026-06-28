@@ -20,6 +20,12 @@ export interface JwtPayload {
    * the access-token TTL (default 15 min).
    */
   permissions: string[];
+  /**
+   * How the session was originally established.
+   * 'sso': via Entra ID — frontend must re-validate with MSAL on each refresh cycle.
+   * 'password': credential-based — standard Rally refresh rotation.
+   */
+  authMethod: 'password' | 'sso';
 }
 
 @Injectable()

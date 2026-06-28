@@ -110,8 +110,16 @@ export class AuthService {
       throw new UnauthorizedException('ACCOUNT_DEACTIVATED', 'No active tenant membership found');
     }
 
-    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, activeTenantId);
-    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions, activeTenantId);
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(
+      user.id,
+      activeTenantId,
+    );
+    const { accessToken, jti, expiresIn } = this.signAccessToken(
+      user,
+      sessionId,
+      permissions,
+      activeTenantId,
+    );
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
 
     // AUTH-FR: rememberMe = 30d session; not remembered = 24h session
@@ -210,8 +218,7 @@ export class AuthService {
       const alreadyClaimed =
         !AuthService.isPublicEmailDomain(domain) &&
         (await this.tenancyService.isDomainClaimed(domain));
-      const claimDomain =
-        AuthService.isPublicEmailDomain(domain) || alreadyClaimed ? null : domain;
+      const claimDomain = AuthService.isPublicEmailDomain(domain) || alreadyClaimed ? null : domain;
       const { tenant, workspace } = await this.tenancyService.provisionTenant(orgName, claimDomain);
       tenantId = tenant.id;
       workspaceId = workspace.id;
@@ -232,14 +239,27 @@ export class AuthService {
     const sessionId = uuidv7();
     const memberships = await this.tenancyService.getMemberships(user.id);
     const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, tenantId);
-    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions, tenantId);
+    const { accessToken, jti, expiresIn } = this.signAccessToken(
+      user,
+      sessionId,
+      permissions,
+      tenantId,
+    );
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
     const refreshExpiry = new Date();
     refreshExpiry.setSeconds(refreshExpiry.getSeconds() + this.refreshTtlSeconds());
 
     await this.rls.withTenantContext(tenantId, async (tx) => {
       await this.sessionRepo.create(
-        { id: sessionId, tenantId, userId: user.id, tokenHash, familyId, ipAddress, expiresAt: refreshExpiry },
+        {
+          id: sessionId,
+          tenantId,
+          userId: user.id,
+          tokenHash,
+          familyId,
+          ipAddress,
+          expiresAt: refreshExpiry,
+        },
         tx,
       );
       await this.userRepo.updateLastLogin(user.id, tx);
@@ -285,9 +305,23 @@ export class AuthService {
 
   /** Common free/public email providers that must never be claimed as a tenant domain. */
   private static readonly PUBLIC_EMAIL_DOMAINS = new Set([
-    'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com',
-    'yahoo.com', 'ymail.com', 'icloud.com', 'me.com', 'aol.com', 'proton.me',
-    'protonmail.com', 'gmx.com', 'mail.com', 'zoho.com', 'yandex.com', 'qq.com',
+    'gmail.com',
+    'googlemail.com',
+    'outlook.com',
+    'hotmail.com',
+    'live.com',
+    'yahoo.com',
+    'ymail.com',
+    'icloud.com',
+    'me.com',
+    'aol.com',
+    'proton.me',
+    'protonmail.com',
+    'gmx.com',
+    'mail.com',
+    'zoho.com',
+    'yandex.com',
+    'qq.com',
   ]);
 
   private static isPublicEmailDomain(domain: string): boolean {
@@ -338,8 +372,20 @@ export class AuthService {
 
     // Revoke old session and issue new tokens (rotation)
     const newSessionId = uuidv7();
-    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, session.tenantId);
-    const { accessToken, expiresIn } = this.signAccessToken(user, newSessionId, permissions, session.tenantId);
+    // Preserve the auth method across rotations so the frontend knows which
+    // refresh path to use (MSAL silent re-auth for SSO vs Rally-only for password).
+    const authMethod: 'password' | 'sso' = session.ssoProvider ? 'sso' : 'password';
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(
+      user.id,
+      session.tenantId,
+    );
+    const { accessToken, expiresIn } = this.signAccessToken(
+      user,
+      newSessionId,
+      permissions,
+      session.tenantId,
+      authMethod,
+    );
     const { refreshToken: newRefreshToken, tokenHash: newHash } = this.generateRefreshToken();
 
     const refreshExpiry = new Date();
@@ -359,6 +405,7 @@ export class AuthService {
           familyId: session.familyId, // preserve family for revocation chain
           ipAddress,
           expiresAt: refreshExpiry,
+          ssoProvider: session.ssoProvider ?? undefined, // carry SSO provider forward
         },
         tx,
       );
@@ -413,7 +460,15 @@ export class AuthService {
       new URL(`https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`),
     );
 
-    let claims: { sub?: unknown; oid?: unknown; email?: unknown; preferred_username?: unknown; upn?: unknown; name?: unknown; tid?: unknown };
+    let claims: {
+      sub?: unknown;
+      oid?: unknown;
+      email?: unknown;
+      preferred_username?: unknown;
+      upn?: unknown;
+      name?: unknown;
+      tid?: unknown;
+    };
     try {
       const result = await jwtVerify(idToken, JWKS, {
         issuer: [
@@ -437,12 +492,15 @@ export class AuthService {
           : typeof claims.upn === 'string'
             ? claims.upn
             : null;
-    const displayName = typeof claims.name === 'string' ? claims.name : email ?? 'Unknown';
+    const displayName = typeof claims.name === 'string' ? claims.name : (email ?? 'Unknown');
     // Entra `tid` — the IdP directory id used to resolve the Rally tenant.
     const externalTenantId = typeof claims.tid === 'string' ? claims.tid : null;
 
     if (!oid || !email) {
-      throw new UnauthorizedException('SSO_CLAIMS_MISSING', 'Required OIDC claims (oid, email) are missing');
+      throw new UnauthorizedException(
+        'SSO_CLAIMS_MISSING',
+        'Required OIDC claims (oid, email) are missing',
+      );
     }
 
     const normalizedEmail = email.toLowerCase().trim();
@@ -454,7 +512,12 @@ export class AuthService {
     let ssoTenantId: string;
     if (existingIdentity) {
       const found = await this.userRepo.findById(existingIdentity.userId);
-      if (!found || found.deletedAt || found.status === 'suspended' || found.status === 'inactive') {
+      if (
+        !found ||
+        found.deletedAt ||
+        found.status === 'suspended' ||
+        found.status === 'inactive'
+      ) {
         throw new UnauthorizedException('USER_DEACTIVATED', 'Account is not active');
       }
       user = found;
@@ -476,8 +539,17 @@ export class AuthService {
     }
 
     const sessionId = uuidv7();
-    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, ssoTenantId);
-    const { accessToken, jti, expiresIn } = this.signAccessToken(user, sessionId, permissions, ssoTenantId);
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(
+      user.id,
+      ssoTenantId,
+    );
+    const { accessToken, jti, expiresIn } = this.signAccessToken(
+      user,
+      sessionId,
+      permissions,
+      ssoTenantId,
+      'sso',
+    );
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
 
     const refreshExpiry = new Date();
@@ -485,13 +557,25 @@ export class AuthService {
 
     await this.rls.withTenantContext(ssoTenantId, async (tx) => {
       await this.sessionRepo.create(
-        { id: sessionId, tenantId: ssoTenantId, userId: user.id, tokenHash, familyId, ipAddress, expiresAt: refreshExpiry },
+        {
+          id: sessionId,
+          tenantId: ssoTenantId,
+          userId: user.id,
+          tokenHash,
+          familyId,
+          ipAddress,
+          expiresAt: refreshExpiry,
+          ssoProvider: 'entra',
+        },
         tx,
       );
       await this.userRepo.updateLastLogin(user.id, tx);
     });
 
-    this.logger.log({ userId: user.id, jti, sessionId, provider: 'entra' }, 'User logged in via SSO');
+    this.logger.log(
+      { userId: user.id, jti, sessionId, provider: 'entra' },
+      'User logged in via SSO',
+    );
 
     void this.audit.record({
       tenantId: ssoTenantId,
@@ -552,7 +636,10 @@ export class AuthService {
     let defaultRoleSlug: string | undefined;
 
     if (externalTenantId) {
-      const connection = await this.ssoConnectionRepo.findByExternalTenantId('entra', externalTenantId);
+      const connection = await this.ssoConnectionRepo.findByExternalTenantId(
+        'entra',
+        externalTenantId,
+      );
       if (connection) {
         if (connection.status !== 'active') {
           throw new UnauthorizedException(
@@ -600,7 +687,13 @@ export class AuthService {
 
     // Upsert the user + SSO identity link. tenant_id on sso_identities is set
     // to the SSO connection's tenant. The users table no longer has tenant_id.
-    const user = await this.userRepo.upsertBySsoIdentity('entra', oid, email, displayName, tenantId);
+    const user = await this.userRepo.upsertBySsoIdentity(
+      'entra',
+      oid,
+      email,
+      displayName,
+      tenantId,
+    );
 
     // Ensure keycard exists for this user in the SSO connection's tenant.
     await this.tenancyService.tenantMemberCreate(uuidv7(), tenantId, user.id);
@@ -690,6 +783,7 @@ export class AuthService {
     sessionId: string,
     permissions: string[],
     tenantId: string,
+    authMethod: 'password' | 'sso' = 'password',
   ): { accessToken: string; jti: string; expiresIn: number } {
     const jti = uuidv7();
     // Keep the client-facing expiresIn in lock-step with the JWT signing config
@@ -702,6 +796,7 @@ export class AuthService {
       sessionId,
       jti,
       permissions,
+      authMethod,
     };
 
     const accessToken = this.jwt.sign(payload);
@@ -899,7 +994,10 @@ export class AuthService {
     // Verify the caller has an active keycard for the target tenant.
     const keycard = await this.tenancyService.getTenantMember(payload.sub, targetTenantId);
     if (!keycard || keycard.status !== 'active') {
-      throw new UnauthorizedException('TENANT_ACCESS_DENIED', 'You are not a member of this tenant');
+      throw new UnauthorizedException(
+        'TENANT_ACCESS_DENIED',
+        'You are not a member of this tenant',
+      );
     }
 
     const user = await this.userRepo.findById(payload.sub);
@@ -907,10 +1005,21 @@ export class AuthService {
       throw new UnauthorizedException('USER_DEACTIVATED', 'User not found or deactivated');
     }
 
-    const { permissions } = await this.accessService.getUserRoleAndPermissions(user.id, targetTenantId);
+    const { permissions } = await this.accessService.getUserRoleAndPermissions(
+      user.id,
+      targetTenantId,
+    );
 
     const newSessionId = uuidv7();
-    const { accessToken, jti, expiresIn } = this.signAccessToken(user, newSessionId, permissions, targetTenantId);
+    // Preserve authMethod across tenant switches
+    const switchAuthMethod: 'password' | 'sso' = payload.authMethod ?? 'password';
+    const { accessToken, jti, expiresIn } = this.signAccessToken(
+      user,
+      newSessionId,
+      permissions,
+      targetTenantId,
+      switchAuthMethod,
+    );
     const { refreshToken, tokenHash, familyId } = this.generateRefreshToken();
 
     const refreshExpiry = new Date();
@@ -939,7 +1048,10 @@ export class AuthService {
       }),
     ]);
 
-    this.logger.log({ userId: user.id, jti, sessionId: newSessionId, targetTenantId }, 'Tenant switched');
+    this.logger.log(
+      { userId: user.id, jti, sessionId: newSessionId, targetTenantId },
+      'Tenant switched',
+    );
 
     void this.tenancyService.touchTenantMembership(user.id, targetTenantId);
     void this.audit.record({

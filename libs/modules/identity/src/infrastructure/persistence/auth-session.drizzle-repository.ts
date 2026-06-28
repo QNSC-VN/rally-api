@@ -28,6 +28,7 @@ export class AuthSessionDrizzleRepository implements IAuthSessionRepository {
       familyId: input.familyId,
       ipAddress: input.ipAddress,
       expiresAt: input.expiresAt,
+      ssoProvider: input.ssoProvider ?? null,
     });
   }
 

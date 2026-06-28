@@ -31,6 +31,8 @@ export interface AuthSession {
   isRevoked: boolean;
   expiresAt: Date;
   createdAt: Date;
+  /** SSO provider if session was created via SSO; null for password sessions. */
+  ssoProvider: string | null;
 }
 
 export interface CreateSessionInput {
@@ -41,6 +43,8 @@ export interface CreateSessionInput {
   familyId: string;
   ipAddress?: string;
   expiresAt: Date;
+  /** Set to 'entra' for SSO sessions; omit for password sessions. */
+  ssoProvider?: string;
 }
 
 export interface PasswordResetToken {
