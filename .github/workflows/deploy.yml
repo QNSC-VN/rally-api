@@ -43,7 +43,7 @@ permissions:
   contents: read
 
 env:
-  GITOPS_SHA: 947bc9bd8e130065082f9a2e15e4f61cfbb736ca   # pin qnsc-gitops to a known commit
+  GITOPS_SHA: d48a2d04ab7d4030421091478e69636e81217457   # pin qnsc-gitops to a known commit
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ jobs:
 
       - name: Setup AWS OIDC + ECR login
         id: aws
-        uses: QNSC-VN/qnsc-gitops/actions/setup-aws-oidc@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/setup-aws-oidc@d48a2d04ab7d4030421091478e69636e81217457
         with:
           role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/rally-github-ecr-push
           region: ${{ vars.AWS_REGION }}
@@ -99,7 +99,7 @@ jobs:
       # ── Build & push API ──────────────────────────────────────────────────
       - name: Build & push API image
         id: build-api
-        uses: QNSC-VN/qnsc-gitops/actions/build-push-ecr@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/build-push-ecr@d48a2d04ab7d4030421091478e69636e81217457
         with:
           ecr-registry: ${{ steps.aws.outputs.ecr-registry }}
           image-name: rally-api
@@ -109,14 +109,14 @@ jobs:
           cache-scope: api
 
       - name: Attest API image (SLSA provenance)
-        uses: QNSC-VN/qnsc-gitops/actions/attest-image@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/attest-image@d48a2d04ab7d4030421091478e69636e81217457
         with:
           image-ref: ${{ steps.aws.outputs.ecr-registry }}/rally-api@${{ steps.build-api.outputs.image-digest }}
 
       # ── Build & push Worker ───────────────────────────────────────────────
       - name: Build & push Worker image
         id: build-worker
-        uses: QNSC-VN/qnsc-gitops/actions/build-push-ecr@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/build-push-ecr@d48a2d04ab7d4030421091478e69636e81217457
         with:
           ecr-registry: ${{ steps.aws.outputs.ecr-registry }}
           image-name: rally-worker
@@ -126,14 +126,14 @@ jobs:
           cache-scope: worker
 
       - name: Attest Worker image (SLSA provenance)
-        uses: QNSC-VN/qnsc-gitops/actions/attest-image@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/attest-image@d48a2d04ab7d4030421091478e69636e81217457
         with:
           image-ref: ${{ steps.aws.outputs.ecr-registry }}/rally-worker@${{ steps.build-worker.outputs.image-digest }}
 
       # ── Build & push Migrator ─────────────────────────────────────────────
       - name: Build & push Migrator image
         id: build-migrator
-        uses: QNSC-VN/qnsc-gitops/actions/build-push-ecr@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/build-push-ecr@d48a2d04ab7d4030421091478e69636e81217457
         with:
           ecr-registry: ${{ steps.aws.outputs.ecr-registry }}
           image-name: rally-migrator
@@ -143,7 +143,7 @@ jobs:
           cache-scope: migrator
 
       - name: Attest Migrator image (SLSA provenance)
-        uses: QNSC-VN/qnsc-gitops/actions/attest-image@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/attest-image@d48a2d04ab7d4030421091478e69636e81217457
         with:
           image-ref: ${{ steps.aws.outputs.ecr-registry }}/rally-migrator@${{ steps.build-migrator.outputs.image-digest }}
 
@@ -170,7 +170,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup AWS OIDC (deploy role)
-        uses: QNSC-VN/qnsc-gitops/actions/setup-aws-oidc@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/setup-aws-oidc@d48a2d04ab7d4030421091478e69636e81217457
         with:
           role-arn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/rally-github-deploy-${{ env.ENVIRONMENT }}
           region: ${{ vars.AWS_REGION }}
@@ -234,7 +234,7 @@ jobs:
 
       # ── Step 2: Run migrations BEFORE any traffic shifts ─────────────────
       - name: Run database migrations
-        uses: QNSC-VN/qnsc-gitops/actions/run-db-migration@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/run-db-migration@d48a2d04ab7d4030421091478e69636e81217457
         with:
           cluster: ${{ vars.ECS_CLUSTER }}
           task-definition: ${{ vars.ECS_MIGRATOR_TASK_DEF }}
@@ -264,7 +264,7 @@ jobs:
 
       # ── Step 4: Verify API is running the expected image tag ──────────────
       - name: Verify API deployment
-        uses: QNSC-VN/qnsc-gitops/actions/verify-ecs-deploy@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/verify-ecs-deploy@d48a2d04ab7d4030421091478e69636e81217457
         with:
           cluster: ${{ vars.ECS_CLUSTER }}
           service: ${{ vars.ECS_API_SERVICE }}
@@ -274,7 +274,7 @@ jobs:
       # ── Step 5: Health check — confirm the new version serves traffic ─────
       - name: Post-deploy health check
         if: vars.APP_URL != ''
-        uses: QNSC-VN/qnsc-gitops/actions/post-deploy-health-check@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/post-deploy-health-check@d48a2d04ab7d4030421091478e69636e81217457
         with:
           url: ${{ vars.APP_URL }}/v1/healthz
           timeout-seconds: '120'
@@ -295,7 +295,7 @@ jobs:
       # ── Step 7: Notify Slack / Discord (always — even on failure) ─────────
       - name: Notify deploy result
         if: always()
-        uses: QNSC-VN/qnsc-gitops/actions/notify-deploy@947bc9bd8e130065082f9a2e15e4f61cfbb736ca
+        uses: QNSC-VN/qnsc-gitops/actions/notify-deploy@d48a2d04ab7d4030421091478e69636e81217457
         with:
           webhook-url: ${{ secrets.SLACK_DEPLOY_WEBHOOK }}
           status: ${{ job.status == 'success' && 'success' || 'failure' }}
