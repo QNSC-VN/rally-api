@@ -25,7 +25,20 @@ import * as schema from '../schema';
 import { projectCounters, projectMembers, workItems } from '../schema/work';
 import { userRoleAssignments } from '../schema/access';
 import { ssoConnections } from '../schema/identity';
-import { DEFAULT_WORKFLOW_STATUSES } from '../../libs/modules/projects/src/domain/project.constants';
+// Inlined from libs/modules/projects/src/domain/project.constants.ts
+// so the migrator Docker image (which doesn't include libs/) can run this seed.
+const DEFAULT_WORKFLOW_STATUSES = [
+  { name: 'Defined', category: 'to_do' as const, color: '#6B7280', position: 0, isDefault: true },
+  {
+    name: 'In Progress',
+    category: 'in_progress' as const,
+    color: '#3B82F6',
+    position: 1,
+    isDefault: false,
+  },
+  { name: 'Completed', category: 'done' as const, color: '#10B981', position: 2, isDefault: false },
+  { name: 'Accepted', category: 'done' as const, color: '#059669', position: 3, isDefault: false },
+] as const;
 
 // Assigned inside seed() before any helper function runs.
 
