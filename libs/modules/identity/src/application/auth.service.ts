@@ -158,6 +158,51 @@ export class AuthService {
       metadata: { method: 'password' },
     });
 
+    // Break-glass alert: every login on the dedicated emergency account triggers a
+    // high-severity audit record and email notification to all platform admins.
+    const breakglassEmail = this.config.get('BREAKGLASS_EMAIL');
+    if (breakglassEmail && user.email.toLowerCase() === breakglassEmail.toLowerCase()) {
+      this.logger.warn(
+        { userId: user.id, sessionId, ipAddress, email: user.email },
+        'SECURITY: Break-glass account login detected',
+      );
+      void this.audit.record({
+        tenantId: activeTenantId,
+        actorId: user.id,
+        actorEmail: user.email,
+        action: 'auth.breakglass_login',
+        resourceType: 'session',
+        resourceId: sessionId,
+        ipAddress,
+        metadata: { alert: 'BREAKGLASS_LOGIN', severity: 'critical' },
+      });
+      const adminEmails = this.config
+        .get('PLATFORM_ADMIN_EMAILS')
+        .split(',')
+        .map((e) => e.trim())
+        .filter(Boolean);
+      const baseUrl = this.config.get('APP_BASE_URL');
+      for (const adminEmail of adminEmails) {
+        const alertKey = this.hashToken(`breakglass-alert:${sessionId}:${adminEmail}`);
+        void this.rls.withTenantContext(activeTenantId, async (tx) => {
+          await this.emailScheduler.schedule(
+            {
+              to: adminEmail,
+              template: 'notification',
+              vars: {
+                title: 'Security Alert: Break-glass account login',
+                body: `The break-glass administrator account (${user.email}) signed in${ipAddress ? ` from IP ${ipAddress}` : ''}. If you did not initiate this, revoke all sessions immediately.`,
+                resourceType: 'security event',
+                appUrl: baseUrl,
+              },
+              idempotencyKey: alertKey,
+            },
+            tx,
+          );
+        });
+      }
+    }
+
     return {
       accessToken,
       refreshToken,
@@ -536,6 +581,17 @@ export class AuthService {
       });
       user = provisioned.user;
       ssoTenantId = provisioned.tenantId;
+    }
+
+    // Auto-elevate platform admins to workspace_admin on every SSO login.
+    // Idempotent — ensureDefaultRole is a no-op if the role is already assigned.
+    const platformAdminEmails = this.config
+      .get('PLATFORM_ADMIN_EMAILS')
+      .split(',')
+      .map((e) => e.trim())
+      .filter(Boolean);
+    if (platformAdminEmails.includes(user.email.toLowerCase())) {
+      await this.accessService.ensureDefaultRole(user.id, ssoTenantId, 'workspace_admin');
     }
 
     const sessionId = uuidv7();

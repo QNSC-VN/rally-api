@@ -386,12 +386,15 @@ async function seed() {
     .onConflictDoNothing();
 
   // ── Admin user ───────────────────────────────────────────────────────────
-  const passwordHash = await argon2.hash('Admin@Rally2026!', { type: argon2.argon2id });
+  // Break-glass credentials are injected via env — never hardcoded in git.
+  const breakglassEmail = process.env['BREAKGLASS_EMAIL'] ?? 'admin@acme.dev';
+  const breakglassPassword = process.env['BREAKGLASS_PASSWORD'] ?? 'Admin@Rally2026!';
+  const passwordHash = await argon2.hash(breakglassPassword, { type: argon2.argon2id });
   await db
     .insert(schema.users)
     .values({
       id: ADMIN_USER_ID,
-      email: 'admin@acme.dev',
+      email: breakglassEmail,
       displayName: 'Admin User',
       emailVerified: true,
       locale: 'en',

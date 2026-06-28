@@ -112,6 +112,19 @@ export const EnvSchema = z.object({
    * match any existing Rally user. Required for SSO in fresh/greenfield installs.
    */
   ENTRA_DEFAULT_TENANT_ID: z.string().uuid().optional(),
+
+  // ── Break-glass super admin ────────────────────────────────────────────────
+  /**
+   * Email of the dedicated password-based break-glass account.
+   * In production: inject via Secrets Manager / ECS task definition.
+   * Every login fires a high-severity audit record + email alert.
+   */
+  BREAKGLASS_EMAIL: z.string().email().default('admin@acme.dev'),
+  /**
+   * Comma-separated SSO (Entra) emails auto-granted workspace_admin on first login.
+   * Example: "nghiavt@qnsc.vn,quangld@qnsc.vn"
+   */
+  PLATFORM_ADMIN_EMAILS: z.string().default(''),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
