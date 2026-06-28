@@ -45,7 +45,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -53,7 +53,7 @@ jobs:
       # Replaces gitleaks-action which requires a paid license for GitHub Org repos.
       # --only-verified reports confirmed live secrets only (zero false positives).
       - name: Scan for secrets
-        uses: trufflesecurity/trufflehog@v3.90.1
+        uses: trufflesecurity/trufflehog@v3.95.6
         with:
           path: ./
           base: ""
@@ -70,10 +70,10 @@ jobs:
       pull-requests: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Review dependency changes
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: critical
 
@@ -91,12 +91,12 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Build API image for scanning
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: api
@@ -128,7 +128,7 @@ jobs:
 
       - name: Upload Trivy SARIF to GitHub Security
         if: always() # upload even if scan failed
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
           category: trivy-container
@@ -148,15 +148,15 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Initialise CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
           queries: security-and-quality
 
-      - uses: QNSC-VN/qnsc-gitops/actions/setup-node-pnpm@v1.0.0
+      - uses: QNSC-VN/qnsc-gitops/actions/setup-node-pnpm@v1.0.5
         with:
           node-version: ${{ env.NODE_VERSION }}
           pnpm-version: ${{ env.PNPM_VERSION }}
@@ -165,6 +165,6 @@ jobs:
         run: pnpm build:api
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: codeql-typescript
