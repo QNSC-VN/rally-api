@@ -87,7 +87,7 @@ jobs:
       IMAGE_TAG: ${{ needs.context.outputs.image_tag }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup AWS OIDC + ECR login
         id: aws
@@ -168,7 +168,7 @@ jobs:
       ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup AWS OIDC (deploy role)
         uses: QNSC-VN/qnsc-gitops/actions/setup-aws-oidc@v1
