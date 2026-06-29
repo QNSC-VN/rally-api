@@ -19,9 +19,10 @@
 #     ECS_API_SERVICE          e.g. api
 #     ECS_WORKER_SERVICE       e.g. worker
 #     ECS_MIGRATOR_TASK_DEF    e.g. rally-develop-migrator
-#     ECS_MIGRATOR_SUBNET      private subnet ID (comma-separated if multiple)
-#     ECS_MIGRATOR_SG          security group allowing outbound to RDS
 #     APP_URL                  e.g. https://api-dev.yourdomain.com (for health)
+#
+#   Note: ECS_MIGRATOR_SUBNET and ECS_MIGRATOR_SG are read dynamically from
+#   Tofu remote state (s3://qnsc-tofu-state) — no GitHub vars needed.
 #
 #   Environment-scoped IAM roles (provisioned by rally-infra):
 #     rally-github-ecr-push    build-push job (ECR push)
@@ -233,13 +234,34 @@ jobs:
           echo "arn=$ARN" >> "$GITHUB_OUTPUT"
 
       # ── Step 2: Run migrations BEFORE any traffic shifts ─────────────────
+      - name: Read infra outputs from Tofu state
+        id: infra
+        run: |
+          STATE=$(aws s3 cp \
+            s3://qnsc-tofu-state/rally/${{ env.ENVIRONMENT }}/terraform.tfstate - \
+            --region ap-southeast-1 2>/dev/null)
+          SUBNET=$(echo "$STATE" | python3 -c "
+          import sys, json
+          s = json.load(sys.stdin)
+          ids = s['outputs']['private_subnet_ids']['value']
+          print(ids[0] if isinstance(ids, list) else ids)
+          ")
+          SG=$(echo "$STATE" | python3 -c "
+          import sys, json
+          s = json.load(sys.stdin)
+          print(s['outputs']['sg_app_id']['value'])
+          ")
+          echo "subnet=$SUBNET" >> "$GITHUB_OUTPUT"
+          echo "sg=$SG" >> "$GITHUB_OUTPUT"
+          echo "Subnet: $SUBNET | SG: $SG"
+
       - name: Run database migrations
         uses: QNSC-VN/qnsc-gitops/actions/run-db-migration@v1
         with:
           cluster: ${{ vars.ECS_CLUSTER }}
           task-definition: ${{ vars.ECS_MIGRATOR_TASK_DEF }}
-          subnet-ids: ${{ vars.ECS_MIGRATOR_SUBNET }}
-          security-group-ids: ${{ vars.ECS_MIGRATOR_SG }}
+          subnet-ids: ${{ steps.infra.outputs.subnet }}
+          security-group-ids: ${{ steps.infra.outputs.sg }}
           region: ${{ vars.AWS_REGION }}
           environment: ${{ env.ENVIRONMENT }}
 
