@@ -23,7 +23,6 @@ import { ResendEmailProvider } from './email/providers/resend.provider';
 import { NotificationSchedulerService } from './notifications/notification-scheduler.service';
 import { NotificationPubSubService } from './notifications/notification-pubsub.service';
 import { HealthController } from './observability/health.controller';
-import { Algorithm } from 'jsonwebtoken';
 import { IdempotencyInterceptor } from './http/idempotency.interceptor';
 import { HttpLoggingInterceptor } from './http/http-logging.interceptor';
 import { ResilienceModule } from './resilience/resilience.module';
@@ -43,14 +42,16 @@ import { StorageService } from './storage/storage.service';
         privateKey: config.get('JWT_PRIVATE_KEY'),
         publicKey: config.get('JWT_PUBLIC_KEY'),
         signOptions: {
-          algorithm: 'EdDSA' as Algorithm,
+          // @ts-expect-error @types/jsonwebtoken 9.x omits EdDSA; runtime jsonwebtoken supports it
+          algorithm: 'EdDSA',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           expiresIn: config.get('JWT_ACCESS_EXPIRY') as any,
           issuer: config.get('JWT_ISSUER'),
           audience: config.get('JWT_AUDIENCE'),
         },
         verifyOptions: {
-          algorithms: ['EdDSA'] as Algorithm[],
+          // @ts-expect-error @types/jsonwebtoken 9.x omits EdDSA; runtime jsonwebtoken supports it
+          algorithms: ['EdDSA'],
           issuer: config.get('JWT_ISSUER'),
           audience: config.get('JWT_AUDIENCE'),
         },
